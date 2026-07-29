@@ -18,12 +18,15 @@ fun AppButton(
     text: String,
     onClick: () -> Unit,
     modifier: Modifier = Modifier,
+    enabled: Boolean = true,
 ) {
     Button(
-        onClick = onClick,
+        // Compose Unstyled's Button has no disabled state of its own, so gate the click here and
+        // dim the surface to signal it.
+        onClick = { if (enabled) onClick() },
         modifier = modifier,
         shape = RoundedCornerShape(AppTheme.Radius),
-        backgroundColor = AppTheme.Primary,
+        backgroundColor = if (enabled) AppTheme.Primary else AppTheme.Disabled,
         contentColor = AppTheme.PrimaryForeground,
         contentPadding = PaddingValues(horizontal = 40.dp, vertical = 18.dp),
     ) {

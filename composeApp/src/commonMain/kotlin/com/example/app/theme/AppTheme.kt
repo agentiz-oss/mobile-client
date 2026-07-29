@@ -18,6 +18,11 @@ object AppTheme {
     val Foreground: Color = Color(0xFF09090B)
     val Primary: Color = Color(0xFF18181B)
     val PrimaryForeground: Color = Color(0xFFFAFAFA)
+    val Muted: Color = Color(0xFF71717A)
+    val Border: Color = Color(0xFFE4E4E7)
+    val Surface: Color = Color(0xFFFAFAFA)
+    val Danger: Color = Color(0xFFDC2626)
+    val Disabled: Color = Color(0xFFA1A1AA)
 
     val Radius: Dp = 12.dp
 
@@ -25,6 +30,24 @@ object AppTheme {
         fontSize = 34.sp,
         lineHeight = 40.sp,
         fontWeight = FontWeight.SemiBold,
+    )
+
+    val Subtitle: TextStyle = TextStyle(
+        fontSize = 20.sp,
+        lineHeight = 28.sp,
+        fontWeight = FontWeight.SemiBold,
+    )
+
+    val Body: TextStyle = TextStyle(
+        fontSize = 16.sp,
+        lineHeight = 24.sp,
+        fontWeight = FontWeight.Normal,
+    )
+
+    val Label: TextStyle = TextStyle(
+        fontSize = 14.sp,
+        lineHeight = 20.sp,
+        fontWeight = FontWeight.Medium,
     )
 
     val ButtonLabel: TextStyle = TextStyle(
