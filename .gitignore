@@ -1,0 +1,18 @@
+# Gradle
+.gradle/
+build/
+
+# Local, machine-specific configuration (contains the Android SDK path)
+local.properties
+
+# Kotlin/Native
+.kotlin/
+
+# Xcode / iOS
+iosApp/build/
+xcuserdata/
+*.xcworkspace/xcuserdata/
+
+# OS / IDE
+.DS_Store
+.idea/
