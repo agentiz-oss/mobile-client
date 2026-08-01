@@ -2,6 +2,7 @@ package com.example.app.screens
 
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -22,6 +23,8 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import com.composeunstyled.Text
@@ -37,7 +40,7 @@ import com.example.app.theme.AppTheme
  * Handles the four states a network list has — loading, error (with retry), empty, and populated.
  */
 @Composable
-fun ProjectsScreen(session: Session, onLogout: () -> Unit) {
+fun ProjectsScreen(session: Session, onOpenProject: (ProjectDto) -> Unit, onLogout: () -> Unit) {
     val api = remember(session.serverUrl) { AgentizApi(session.serverUrl) }
     DisposableEffect(api) { onDispose { api.close() } }
 
@@ -81,7 +84,7 @@ fun ProjectsScreen(session: Session, onLogout: () -> Unit) {
                 verticalArrangement = Arrangement.spacedBy(12.dp),
             ) {
                 items(projects!!, key = { it.id }) { project ->
-                    ProjectCard(project)
+                    ProjectCard(project, onClick = { onOpenProject(project) })
                 }
             }
         }
@@ -105,10 +108,13 @@ private fun Header(userLabel: String, onLogout: () -> Unit) {
 }
 
 @Composable
-private fun ProjectCard(project: ProjectDto) {
+private fun ProjectCard(project: ProjectDto, onClick: () -> Unit) {
     Column(
         modifier = Modifier
             .fillMaxWidth()
+            // Clipped before the click so the press highlight follows the rounded card edge.
+            .clip(RoundedCornerShape(AppTheme.Radius))
+            .clickable(role = Role.Button, onClick = onClick)
             .border(1.dp, AppTheme.Border, RoundedCornerShape(AppTheme.Radius))
             .background(AppTheme.Surface, RoundedCornerShape(AppTheme.Radius))
             .padding(20.dp),

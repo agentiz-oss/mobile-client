@@ -1,5 +1,7 @@
 import org.jetbrains.compose.desktop.application.dsl.TargetFormat
+import org.jetbrains.kotlin.gradle.ExperimentalWasmDsl
 import org.jetbrains.kotlin.gradle.dsl.JvmTarget
+import org.jetbrains.kotlin.gradle.targets.js.webpack.KotlinWebpackConfig
 
 plugins {
     alias(libs.plugins.kotlinMultiplatform)
@@ -17,6 +19,21 @@ kotlin {
     }
 
     jvm("desktop")
+
+    @OptIn(ExperimentalWasmDsl::class)
+    wasmJs {
+        browser {
+            commonWebpackConfig {
+                outputFileName = "composeApp.js"
+                // Webpack's default of 8080 collides with too much on a dev machine; give the
+                // browser build a port of its own.
+                devServer = (devServer ?: KotlinWebpackConfig.DevServer()).apply {
+                    port = 8081
+                }
+            }
+        }
+        binaries.executable()
+    }
 
     listOf(
         iosArm64(),
@@ -53,6 +70,9 @@ kotlin {
         }
         iosMain.dependencies {
             implementation(libs.ktor.client.darwin)
+        }
+        wasmJsMain.dependencies {
+            implementation(libs.ktor.client.js)
         }
         desktopTest.dependencies {
             implementation(kotlin("test"))

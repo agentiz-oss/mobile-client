@@ -13,6 +13,14 @@ iosApp/build/
 xcuserdata/
 *.xcworkspace/xcuserdata/
 
+# Fastlane (generated on every run; never commit credentials)
+iosApp/fastlane/report.xml
+iosApp/fastlane/Preview.html
+iosApp/fastlane/test_output/
+iosApp/fastlane/*.p8
+iosApp/fastlane/*.mobileprovision
+iosApp/fastlane/app_store_connect_api_key.json
+
 # OS / IDE
 .DS_Store
 .idea/
