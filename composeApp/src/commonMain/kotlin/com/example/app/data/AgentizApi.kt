@@ -23,7 +23,7 @@ class ApiException(val status: Int, message: String) : Exception(message)
  */
 class AgentizApi(baseUrl: String = platformDefaultBaseUrl()) {
 
-    /** Absolute prefix of every call, e.g. `http://localhost:17280/api/agentiz/mobile/v1`. */
+    /** Absolute prefix of every call, e.g. `https://agentiz.m42.cx/api/agentiz/mobile/v1`. */
     private val root = baseUrl.trimEnd('/') + BASE_PATH
 
     private val client = HttpClient {
@@ -49,6 +49,47 @@ class AgentizApi(baseUrl: String = platformDefaultBaseUrl()) {
         client.get("$root/projects") {
             bearerAuth(token)
         }.decodeOrThrow<ProjectsResponse>().data
+
+    /** Tasks of one project, newest first. */
+    suspend fun tasks(token: String, projectId: String): List<TaskDto> =
+        client.get("$root/projects/$projectId/tasks") {
+            bearerAuth(token)
+        }.decodeOrThrow<TasksResponse>().data
+
+    suspend fun createTask(
+        token: String,
+        projectId: String,
+        title: String,
+        description: String?,
+        tags: List<String> = emptyList(),
+    ): TaskDto =
+        client.post("$root/projects/$projectId/tasks") {
+            bearerAuth(token)
+            contentType(ContentType.Application.Json)
+            setBody(CreateTaskRequest(title = title, description = description, tags = tags))
+        }.decodeOrThrow<TaskResponse>().data
+
+    /** One task with its latest run and the whole comment thread. */
+    suspend fun task(token: String, taskId: String): TaskDetailDto =
+        client.get("$root/tasks/$taskId") {
+            bearerAuth(token)
+        }.decodeOrThrow<TaskDetailResponse>().data
+
+    /**
+     * Queues a pipeline run. The server answers as soon as the job is enqueued, not when it
+     * finishes — a worker executes it out of band, so the caller polls [task] for the outcome.
+     */
+    suspend fun runTask(token: String, taskId: String): RunRefDto =
+        client.post("$root/tasks/$taskId/run") {
+            bearerAuth(token)
+        }.decodeOrThrow<RunRefResponse>().data
+
+    suspend fun addComment(token: String, taskId: String, body: String): CommentDto =
+        client.post("$root/tasks/$taskId/comments") {
+            bearerAuth(token)
+            contentType(ContentType.Application.Json)
+            setBody(CreateCommentRequest(body = body))
+        }.decodeOrThrow<CommentResponse>().data
 
     /** Releases the underlying engine; call when the client is no longer needed. */
     fun close() = client.close()

@@ -24,6 +24,7 @@ import androidx.compose.ui.unit.dp
 import com.composeunstyled.Text
 import com.example.app.components.AppButton
 import com.example.app.components.AppTextField
+import com.example.app.data.AGENTIZ_SERVER_URL
 import com.example.app.data.AgentizApi
 import com.example.app.data.ApiException
 import com.example.app.data.Session
@@ -33,8 +34,8 @@ import kotlinx.coroutines.launch
 
 /**
  * Credential entry. Exchanges an Adminizer admin login for a bearer token via the mobile API and,
- * on success, hands a ready [Session] up to the caller. The server field is pre-filled with the
- * platform default so the common case (local dev) needs only a login and password.
+ * on success, hands a ready [Session] up to the caller. The server field is pre-filled with
+ * [AGENTIZ_SERVER_URL] so the common case needs only a login and password.
  */
 @Composable
 fun LoginScreen(onLoggedIn: (Session) -> Unit) {
@@ -89,7 +90,7 @@ fun LoginScreen(onLoggedIn: (Session) -> Unit) {
                 label = "Сервер",
                 value = server,
                 onValueChange = { server = it },
-                placeholder = "http://localhost:17280",
+                placeholder = AGENTIZ_SERVER_URL,
                 enabled = !busy,
             )
             Spacer(Modifier.height(16.dp))
