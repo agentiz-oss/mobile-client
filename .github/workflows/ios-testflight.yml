@@ -65,18 +65,23 @@ jobs:
           # Only pushes to main refresh the shared cache entry; other runs read it.
           cache-read-only: ${{ github.ref != 'refs/heads/main' }}
 
-      - name: Cache Kotlin/Native (Konan) toolchain
+      - name: Restore Kotlin/Native (Konan) toolchain
         # ~/.konan holds the Kotlin/Native compiler and the prebuilt iOS platform
         # libraries (multiple GB). Without this it is re-downloaded every run.
-        uses: actions/cache@v4
+        # Restore/save are split so the toolchain is cached even when a later
+        # step (e.g. the TestFlight upload) fails: actions/cache only saves on a
+        # fully successful job, which kept this entry from ever being written.
+        id: konan-cache
+        uses: actions/cache/restore@v4
         with:
           path: ~/.konan
           key: konan-${{ runner.os }}-${{ hashFiles('gradle/libs.versions.toml') }}
           restore-keys: |
             konan-${{ runner.os }}-
 
-      - name: Cache Android SDK packages
-        uses: actions/cache@v4
+      - name: Restore Android SDK packages
+        id: android-cache
+        uses: actions/cache/restore@v4
         with:
           path: |
             ~/Library/Android/sdk/platforms
@@ -91,6 +96,16 @@ jobs:
         uses: android-actions/setup-android@v3
         with:
           packages: 'platform-tools platforms;android-36 build-tools;36.0.0'
+
+      - name: Save Android SDK packages
+        if: steps.android-cache.outputs.cache-hit != 'true'
+        uses: actions/cache/save@v4
+        with:
+          path: |
+            ~/Library/Android/sdk/platforms
+            ~/Library/Android/sdk/build-tools
+            ~/Library/Android/sdk/platform-tools
+          key: ${{ steps.android-cache.outputs.cache-primary-key }}
 
       - name: Select latest Xcode
         run: |
@@ -221,6 +236,15 @@ jobs:
         # Gradle again and reuses this warmed-up process instead of starting a
         # second JVM from scratch.
         run: ./gradlew :composeApp:linkReleaseFrameworkIosArm64 --build-cache
+
+      - name: Save Kotlin/Native (Konan) toolchain
+        # Saved here rather than at job end so the toolchain is preserved even if
+        # the upload below fails.
+        if: steps.konan-cache.outputs.cache-hit != 'true'
+        uses: actions/cache/save@v4
+        with:
+          path: ~/.konan
+          key: ${{ steps.konan-cache.outputs.cache-primary-key }}
 
       - name: Build and deploy to TestFlight
         working-directory: ${{ env.IOS_DIRECTORY }}
