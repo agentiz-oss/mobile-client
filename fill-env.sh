@@ -4,8 +4,12 @@
 # Usage: ./fill-env.sh <dist.cer> <profile.mobileprovision> <AuthKey_XXXX.p8> <key-id> <issuer-id>
 #
 # The .cer from Apple is only half a certificate — it must be joined with the
-# private key from the CSR to make a .p12 that can actually sign. This does that
-# join with /tmp/dist.key, so run it on the machine where the CSR was generated.
+# private key from the CSR to make a .p12 that can actually sign, so run this on
+# the machine where the CSR was generated.
+#
+# The key is read from apple-signing/, not /tmp: a p12 built from a missing key
+# silently ends up certificate-only, which imports fine on CI and then fails at
+# codesign time with no useful message.
 
 set -euo pipefail
 
@@ -15,11 +19,18 @@ P8="${3:?path to AuthKey_XXXXXXXXXX.p8}"
 KEY_ID="${4:?App Store Connect Key ID}"
 ISSUER_ID="${5:?App Store Connect Issuer ID}"
 
-ENV_FILE="$(dirname "$0")/.env"
-[ -f /tmp/dist.key ] || { echo "FAIL: /tmp/dist.key missing — the CSR's private key. Regenerate the CSR and request a new certificate."; exit 1; }
+DIR="$(dirname "$0")"
+ENV_FILE="$DIR/.env"
+SIGNING_DIR="$DIR/apple-signing"
+DIST_KEY="${DIST_KEY:-$SIGNING_DIR/avtotreid_dist.key}"
+WWDR="$SIGNING_DIR/wwdrg3.pem"
+
+[ -f "$DIST_KEY" ] || { echo "FAIL: $DIST_KEY missing — the CSR's private key. Set DIST_KEY=<path>, or regenerate the CSR and request a new certificate."; exit 1; }
 
 # --- certificate -> .p12 --------------------------------------------------
-P12_PASS=$(openssl rand -base64 18 | tr -d '\n')
+# hex, not base64: the password travels through CI secrets and shell quoting,
+# where a stray + or / turns into a wrong-password import failure.
+P12_PASS=$(openssl rand -hex 16)
 openssl x509 -inform DER -in "$CER" -out /tmp/dist.pem 2>/dev/null \
   || openssl x509 -inform PEM -in "$CER" -out /tmp/dist.pem
 
@@ -31,13 +42,24 @@ esac
 
 # Confirm the cert actually matches the private key, or signing fails cryptically later.
 CERT_MOD=$(openssl x509 -noout -modulus -in /tmp/dist.pem | openssl md5)
-KEY_MOD=$(openssl rsa -noout -modulus -in /tmp/dist.key | openssl md5)
-[ "$CERT_MOD" = "$KEY_MOD" ] || { echo "FAIL: certificate does not match /tmp/dist.key"; exit 1; }
+KEY_MOD=$(openssl rsa -noout -modulus -in "$DIST_KEY" | openssl md5)
+[ "$CERT_MOD" = "$KEY_MOD" ] || { echo "FAIL: certificate does not match $DIST_KEY"; exit 1; }
 
-openssl pkcs12 -export -inkey /tmp/dist.key -in /tmp/dist.pem \
+# Bundle the WWDR intermediate when we have it, so the chain validates on a
+# clean runner keychain that has never talked to Apple.
+CHAIN=()
+[ -f "$WWDR" ] && CHAIN=(-certfile "$WWDR")
+
+openssl pkcs12 -export -inkey "$DIST_KEY" -in /tmp/dist.pem "${CHAIN[@]}" \
   -out /tmp/dist.p12 -passout "pass:$P12_PASS" -legacy 2>/dev/null \
-  || openssl pkcs12 -export -inkey /tmp/dist.key -in /tmp/dist.pem \
+  || openssl pkcs12 -export -inkey "$DIST_KEY" -in /tmp/dist.pem "${CHAIN[@]}" \
        -out /tmp/dist.p12 -passout "pass:$P12_PASS"
+
+# A certificate-only p12 imports without error and only fails later at codesign,
+# so verify the key is really in there before writing it out.
+KEYS_IN_P12=$(openssl pkcs12 -in /tmp/dist.p12 -passin "pass:$P12_PASS" -nocerts -nodes -legacy 2>/dev/null \
+  | grep -c 'BEGIN PRIVATE KEY' || true)
+[ "$KEYS_IN_P12" -ge 1 ] || { echo "FAIL: built .p12 contains no private key — it cannot sign."; exit 1; }
 
 # --- provisioning profile -------------------------------------------------
 security cms -D -i "$PROFILE" > /tmp/profile.plist 2>/dev/null
@@ -82,6 +104,7 @@ chmod 600 "$ENV_FILE"
 rm -f /tmp/dist.pem /tmp/profile.plist
 
 echo "OK  certificate : $SUBJECT"
+echo "OK  private key : bundled into .p12 (from $DIST_KEY)"
 echo "OK  profile     : $PROFILE_NAME ($APP_ID)"
 echo "OK  ASC key     : $KEY_ID"
 echo

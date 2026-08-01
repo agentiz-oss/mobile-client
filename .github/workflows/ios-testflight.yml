@@ -61,10 +61,33 @@ jobs:
 
       - name: Set up Gradle
         uses: gradle/actions/setup-gradle@v4
+        with:
+          # Only pushes to main refresh the shared cache entry; other runs read it.
+          cache-read-only: ${{ github.ref != 'refs/heads/main' }}
+
+      - name: Cache Kotlin/Native (Konan) toolchain
+        # ~/.konan holds the Kotlin/Native compiler and the prebuilt iOS platform
+        # libraries (multiple GB). Without this it is re-downloaded every run.
+        uses: actions/cache@v4
+        with:
+          path: ~/.konan
+          key: konan-${{ runner.os }}-${{ hashFiles('gradle/libs.versions.toml') }}
+          restore-keys: |
+            konan-${{ runner.os }}-
+
+      - name: Cache Android SDK packages
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/Library/Android/sdk/platforms
+            ~/Library/Android/sdk/build-tools
+            ~/Library/Android/sdk/platform-tools
+          key: android-sdk-${{ runner.os }}-android36-buildtools36
 
       - name: Set up Android SDK
         # composeApp applies the Android application plugin, so Gradle needs an
         # SDK to configure the project even though we only build the iOS target.
+        # sdkmanager skips packages already restored from the cache above.
         uses: android-actions/setup-android@v3
         with:
           packages: 'platform-tools platforms;android-36 build-tools;36.0.0'
@@ -85,7 +108,12 @@ jobs:
           echo "ANDROID_HOME=${ANDROID_HOME:-<unset>}"
 
       - name: Install Fastlane
-        run: sudo gem install fastlane -NV
+        # bundler-cache restores the resolved gems from Gemfile.lock instead of
+        # rebuilding fastlane's native extensions on every run.
+        uses: ruby/setup-ruby@v1
+        with:
+          working-directory: ${{ env.IOS_DIRECTORY }}
+          bundler-cache: true
 
       - name: Configure bundle id and team in Config.xcconfig
         id: config
@@ -186,7 +214,10 @@ jobs:
       - name: Pre-build Kotlin framework
         # Not strictly required (the Xcode build phase runs Gradle itself), but
         # Kotlin compile errors are far easier to read outside the xcodebuild log.
-        run: ./gradlew :composeApp:linkReleaseFrameworkIosArm64 --no-daemon
+        # The daemon is kept alive on purpose: the Xcode build phase invokes
+        # Gradle again and reuses this warmed-up process instead of starting a
+        # second JVM from scratch.
+        run: ./gradlew :composeApp:linkReleaseFrameworkIosArm64 --build-cache
 
       - name: Build and deploy to TestFlight
         working-directory: ${{ env.IOS_DIRECTORY }}
@@ -211,7 +242,7 @@ jobs:
           FASTLANE_SKIP_UPDATE_CHECK: '1'
           FASTLANE_XCODEBUILD_SETTINGS_TIMEOUT: '180'
           GRADLE_OPTS: '-Dorg.gradle.jvmargs=-Xmx4g'
-        run: fastlane beta
+        run: bundle exec fastlane beta
 
       - name: Upload IPA and dSYMs
         if: success()
