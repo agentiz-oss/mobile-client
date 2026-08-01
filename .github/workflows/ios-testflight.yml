@@ -112,6 +112,9 @@ jobs:
         # rebuilding fastlane's native extensions on every run.
         uses: ruby/setup-ruby@v1
         with:
+          # The runner's preinstalled Ruby; setup-ruby requires an explicit
+          # version when the repo has no .ruby-version file.
+          ruby-version: '3.3'
           working-directory: ${{ env.IOS_DIRECTORY }}
           bundler-cache: true
 
