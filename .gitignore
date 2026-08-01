@@ -16,3 +16,6 @@ xcuserdata/
 # OS / IDE
 .DS_Store
 .idea/
+
+# Symlinks to checkouts outside this repo
+/iphone-buils
