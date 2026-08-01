@@ -27,3 +27,9 @@ iosApp/fastlane/app_store_connect_api_key.json
 
 # Symlinks to checkouts outside this repo
 /iphone-buils
+
+# Signing material and CI secrets — never commit
+.env
+*.p12
+*.p8
+*.mobileprovision
