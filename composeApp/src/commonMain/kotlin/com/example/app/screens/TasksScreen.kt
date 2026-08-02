@@ -60,6 +60,8 @@ fun TasksScreen(
     menu: List<MenuEntry>,
     onOpenTask: (TaskDto) -> Unit,
     onBack: () -> Unit,
+    onOpenSettings: () -> Unit,
+    onOpenProfile: () -> Unit,
 ) {
     val api = remember(session.serverUrl) { AgentizApi(session.serverUrl) }
     DisposableEffect(api) { onDispose { api.close() } }
@@ -114,6 +116,8 @@ fun TasksScreen(
         title = project.name,
         subtitle = project.slug.takeIf { it.isNotBlank() },
         menu = menu,
+        onOpenSettings = onOpenSettings,
+        onOpenProfile = onOpenProfile,
         onBack = onBack,
     ) {
         // One lazy list for the whole screen: the form is its first item, so it scrolls away as

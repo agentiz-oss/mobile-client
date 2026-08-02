@@ -57,13 +57,18 @@ class SessionRestoreTest {
 
     @OptIn(ExperimentalTestApi::class)
     @Test
-    fun loggingOutThroughTheMenuClearsTheStoredSession() = runComposeUiTest {
+    fun loggingOutThroughTheProfilePageClearsTheStoredSession() = runComposeUiTest {
         saveSession(session())
 
         setContent { App() }
         waitForIdle()
 
         onNodeWithContentDescription("Открыть меню").performClick()
+        waitForIdle()
+
+        // Signing out is no longer a row in the menu: it sits on the profile page, behind the
+        // person icon in the drawer's footer.
+        onNodeWithContentDescription("Профиль").performClick()
         waitForIdle()
 
         onNodeWithText("Выйти").performClick()

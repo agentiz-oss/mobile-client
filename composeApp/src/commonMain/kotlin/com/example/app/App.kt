@@ -12,7 +12,9 @@ import com.example.app.data.clearSession
 import com.example.app.data.loadSession
 import com.example.app.data.saveSession
 import com.example.app.screens.LoginScreen
+import com.example.app.screens.ProfileScreen
 import com.example.app.screens.ProjectsScreen
+import com.example.app.screens.SettingsScreen
 import com.example.app.screens.TaskDetailScreen
 import com.example.app.screens.TasksScreen
 
@@ -25,6 +27,29 @@ private sealed interface Destination {
     data object Projects : Destination
     data class Tasks(val project: ProjectDto) : Destination
     data class Task(val project: ProjectDto, val taskId: String) : Destination
+
+    /**
+     * The two pages behind the drawer's footer icons. Each carries where it was opened from so
+     * back returns there rather than dumping the user on the project list — they are reachable
+     * from anywhere, so there is no one place "back" could otherwise mean.
+     */
+    data class Settings(val from: Destination) : Destination
+    data class Profile(val from: Destination) : Destination
+}
+
+/**
+ * The project a destination is "in", if any. Settings and Profile inherit it from wherever they
+ * were opened, so the drawer keeps offering the project you were last looking at.
+ *
+ * Non-recursive by construction: neither wrapper is ever built around another, since both are only
+ * ever opened from a content screen.
+ */
+private fun Destination.project(): ProjectDto? = when (this) {
+    is Destination.Projects -> null
+    is Destination.Tasks -> project
+    is Destination.Task -> project
+    is Destination.Settings -> from.project()
+    is Destination.Profile -> from.project()
 }
 
 /**
@@ -72,12 +97,10 @@ fun App() {
             ),
         )
         // Only meaningful once a project has been opened — from the project list there is no
-        // "current project" to go back up to.
-        val project = when (val where = destination) {
-            is Destination.Tasks -> where.project
-            is Destination.Task -> where.project
-            is Destination.Projects -> null
-        }
+        // "current project" to go back up to. Settings and Profile are not places a project is
+        // open *in*, but they were opened from somewhere that might have had one, so the entry
+        // follows the destination they came from.
+        val project = destination.project()
         if (project != null) {
             add(
                 MenuEntry(
@@ -87,10 +110,16 @@ fun App() {
                 ),
             )
         }
-        add(MenuEntry(label = "Выйти", onClick = ::logout, danger = true))
+        // No "Выйти" here any more: signing out lives on the profile page behind the drawer's
+        // person icon, where a mis-tap while flicking through the menu cannot reach it.
     }
 
     val userLabel = current.user.fullName?.takeIf { it.isNotBlank() } ?: current.user.login
+
+    // Captured once so every screen opens the two footer pages the same way, each remembering the
+    // destination it was opened from.
+    val openSettings = { destination = Destination.Settings(destination) }
+    val openProfile = { destination = Destination.Profile(destination) }
 
     when (val where = destination) {
         is Destination.Projects -> ProjectsScreen(
@@ -98,6 +127,8 @@ fun App() {
             menu = menu,
             userLabel = userLabel,
             onOpenProject = { destination = Destination.Tasks(it) },
+            onOpenSettings = openSettings,
+            onOpenProfile = openProfile,
         )
 
         is Destination.Tasks -> TasksScreen(
@@ -106,6 +137,8 @@ fun App() {
             menu = menu,
             onOpenTask = { destination = Destination.Task(where.project, it.id) },
             onBack = { destination = Destination.Projects },
+            onOpenSettings = openSettings,
+            onOpenProfile = openProfile,
         )
 
         is Destination.Task -> TaskDetailScreen(
@@ -113,6 +146,27 @@ fun App() {
             taskId = where.taskId,
             menu = menu,
             onBack = { destination = Destination.Tasks(where.project) },
+            onOpenSettings = openSettings,
+            onOpenProfile = openProfile,
+        )
+
+        // The footer icon for the page you are already on is left inert rather than pushing a
+        // second copy of it — tapping "Настройки" from settings should do nothing, not deepen the
+        // back stack by one indistinguishable screen.
+        is Destination.Settings -> SettingsScreen(
+            menu = menu,
+            onBack = { destination = where.from },
+            onOpenSettings = {},
+            onOpenProfile = { destination = Destination.Profile(where.from) },
+        )
+
+        is Destination.Profile -> ProfileScreen(
+            session = current,
+            menu = menu,
+            onLogout = ::logout,
+            onBack = { destination = where.from },
+            onOpenSettings = { destination = Destination.Settings(where.from) },
+            onOpenProfile = {},
         )
     }
 }

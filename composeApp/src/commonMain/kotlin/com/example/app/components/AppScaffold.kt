@@ -225,6 +225,8 @@ fun AppScaffold(
     title: String,
     subtitle: String? = null,
     menu: List<MenuEntry>,
+    onOpenSettings: () -> Unit,
+    onOpenProfile: () -> Unit,
     onBack: (() -> Unit)? = null,
     content: @Composable () -> Unit,
 ) {
@@ -239,7 +241,12 @@ fun AppScaffold(
     ) {
         // Drawn first, so it is genuinely behind the screen rather than over it. Its own insets:
         // the frame can no longer pad for everyone now that the two layers move independently.
-        MenuPanel(drawer = drawer, entries = menu)
+        MenuPanel(
+            drawer = drawer,
+            entries = menu,
+            onOpenSettings = onOpenSettings,
+            onOpenProfile = onOpenProfile,
+        )
 
         ContentSheet(drawer = drawer) {
             Column(modifier = Modifier.fillMaxSize()) {
@@ -432,7 +439,12 @@ private fun TopBar(
  * reader and matched by `onNodeWithText` while nobody can see them.
  */
 @Composable
-private fun BoxScope.MenuPanel(drawer: DrawerState, entries: List<MenuEntry>) {
+private fun BoxScope.MenuPanel(
+    drawer: DrawerState,
+    entries: List<MenuEntry>,
+    onOpenSettings: () -> Unit,
+    onOpenProfile: () -> Unit,
+) {
     if (drawer.progress <= 0f) return
 
     Column(
@@ -475,7 +487,52 @@ private fun BoxScope.MenuPanel(drawer: DrawerState, entries: List<MenuEntry>) {
         // Pinned to the bottom of the panel rather than to the end of the scrolling list: the
         // build stamp is a footer, and a footer that scrolls away is one you have to hunt for.
         Divider()
+        FooterActions(
+            onOpenSettings = onOpenSettings,
+            onOpenProfile = onOpenProfile,
+            onDismiss = { drawer.close() },
+        )
         BuildStamp()
+    }
+}
+
+/**
+ * Settings and account, as icons rather than another two rows of the list above.
+ *
+ * They sit here because neither is a place you go the way "Проекты" is — one is the app's own
+ * configuration and the other is who you are signed in as, and both are what you reach for *after*
+ * scanning the list rather than while scanning it. Icons keep them available without lengthening
+ * the thing you flick through.
+ */
+@Composable
+private fun FooterActions(
+    onOpenSettings: () -> Unit,
+    onOpenProfile: () -> Unit,
+    onDismiss: () -> Unit,
+) {
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(horizontal = 12.dp, vertical = 4.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        IconButton(
+            onClick = {
+                // Closed before navigating, exactly as the rows above do: a drawer left standing
+                // over the screen it just opened has to be dismissed by hand.
+                onDismiss()
+                onOpenSettings()
+            },
+            label = "Настройки",
+        ) { tint -> SettingsIcon(tint) }
+
+        IconButton(
+            onClick = {
+                onDismiss()
+                onOpenProfile()
+            },
+            label = "Профиль",
+        ) { tint -> PersonIcon(tint) }
     }
 }
 

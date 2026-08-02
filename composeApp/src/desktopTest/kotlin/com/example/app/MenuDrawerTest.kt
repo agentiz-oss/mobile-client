@@ -105,4 +105,57 @@ class MenuDrawerTest {
         // Substring match: the stamp appends a "*" when the tree was dirty at build time.
         onNodeWithText(BuildInfo.COMMIT, substring = true).assertIsDisplayed()
     }
+
+    @OptIn(ExperimentalTestApi::class)
+    @Test
+    fun theFooterCogOpensSettingsAndClosesTheDrawer() = runComposeUiTest {
+        signIn()
+        setContent { App() }
+        waitForIdle()
+
+        onNodeWithContentDescription("Открыть меню").performClick()
+        waitForIdle()
+
+        onNodeWithContentDescription("Настройки").performClick()
+        waitForIdle()
+
+        onNodeWithText("Настройки появятся позже").assertIsDisplayed()
+        // The drawer let go on the way through, rather than being left over the page it opened.
+        onNodeWithText("Меню").assertDoesNotExist()
+    }
+
+    @OptIn(ExperimentalTestApi::class)
+    @Test
+    fun theFooterPersonOpensTheProfileWhereSigningOutLives() = runComposeUiTest {
+        signIn()
+        setContent { App() }
+        waitForIdle()
+
+        onNodeWithContentDescription("Открыть меню").performClick()
+        waitForIdle()
+
+        onNodeWithContentDescription("Профиль").performClick()
+        waitForIdle()
+
+        onNodeWithText("Тест Тестов").assertIsDisplayed()
+        onNodeWithText("Выйти").assertIsDisplayed()
+    }
+
+    @OptIn(ExperimentalTestApi::class)
+    @Test
+    fun backFromSettingsReturnsToTheScreenItWasOpenedFrom() = runComposeUiTest {
+        signIn()
+        setContent { App() }
+        waitForIdle()
+
+        onNodeWithContentDescription("Открыть меню").performClick()
+        waitForIdle()
+        onNodeWithContentDescription("Настройки").performClick()
+        waitForIdle()
+
+        onNodeWithContentDescription("Назад").performClick()
+        waitForIdle()
+
+        onNodeWithText("Проекты").assertIsDisplayed()
+    }
 }

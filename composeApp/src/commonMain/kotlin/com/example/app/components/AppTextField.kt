@@ -2,7 +2,6 @@ package com.example.app.components
 
 import androidx.compose.animation.animateColorAsState
 import androidx.compose.animation.core.tween
-import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
@@ -25,15 +24,10 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.focus.onFocusChanged
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.graphics.Path
 import androidx.compose.ui.graphics.SolidColor
-import androidx.compose.ui.graphics.StrokeCap
-import androidx.compose.ui.graphics.StrokeJoin
-import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
@@ -181,45 +175,13 @@ private fun PasswordVisibilityToggle(
     ) {
         EyeIcon(
             crossedOut = visible,
+            // The field's own fill, which is what the crossed-out slash carves its gap out of.
+            background = AppTheme.Background,
             tint = when {
                 !enabled -> AppTheme.Disabled
                 visible -> AppTheme.Foreground
                 else -> AppTheme.Muted
             },
         )
-    }
-}
-
-/**
- * An eye glyph drawn by hand — the project pulls in no icon pack, and a couple of curves cost far
- * less than one. When [crossedOut] the diagonal is outlined in the field colour so it stays
- * readable where it crosses the eye.
- */
-@Composable
-private fun EyeIcon(
-    crossedOut: Boolean,
-    tint: Color,
-) {
-    Canvas(modifier = Modifier.size(20.dp)) {
-        val w = size.width
-        val h = size.height
-        val lineWidth = w * 0.09f
-        val stroke = Stroke(width = lineWidth, cap = StrokeCap.Round, join = StrokeJoin.Round)
-
-        val outline = Path().apply {
-            moveTo(w * 0.05f, h * 0.5f)
-            quadraticTo(w * 0.5f, h * 0.04f, w * 0.95f, h * 0.5f)
-            quadraticTo(w * 0.5f, h * 0.96f, w * 0.05f, h * 0.5f)
-            close()
-        }
-        drawPath(path = outline, color = tint, style = stroke)
-        drawCircle(color = tint, radius = w * 0.16f, center = center, style = stroke)
-
-        if (crossedOut) {
-            val start = Offset(w * 0.14f, h * 0.86f)
-            val end = Offset(w * 0.86f, h * 0.14f)
-            drawLine(AppTheme.Background, start, end, strokeWidth = lineWidth * 2.6f, cap = StrokeCap.Round)
-            drawLine(tint, start, end, strokeWidth = lineWidth, cap = StrokeCap.Round)
-        }
     }
 }

@@ -60,6 +60,8 @@ fun TaskDetailScreen(
     taskId: String,
     menu: List<MenuEntry>,
     onBack: () -> Unit,
+    onOpenSettings: () -> Unit,
+    onOpenProfile: () -> Unit,
 ) {
     val api = remember(session.serverUrl) { AgentizApi(session.serverUrl) }
     DisposableEffect(api) { onDispose { api.close() } }
@@ -133,6 +135,8 @@ fun TaskDetailScreen(
         title = current?.task?.title ?: "Задача",
         subtitle = current?.task?.externalId?.takeIf { it.isNotBlank() },
         menu = menu,
+        onOpenSettings = onOpenSettings,
+        onOpenProfile = onOpenProfile,
         onBack = onBack,
     ) {
         when {

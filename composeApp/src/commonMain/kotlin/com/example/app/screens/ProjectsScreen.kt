@@ -50,6 +50,8 @@ fun ProjectsScreen(
     menu: List<MenuEntry>,
     userLabel: String,
     onOpenProject: (ProjectDto) -> Unit,
+    onOpenSettings: () -> Unit,
+    onOpenProfile: () -> Unit,
 ) {
     val api = remember(session.serverUrl) { AgentizApi(session.serverUrl) }
     DisposableEffect(api) { onDispose { api.close() } }
@@ -73,7 +75,13 @@ fun ProjectsScreen(
         }
     }
 
-    AppScaffold(title = "Проекты", subtitle = userLabel, menu = menu) {
+    AppScaffold(
+        title = "Проекты",
+        subtitle = userLabel,
+        menu = menu,
+        onOpenSettings = onOpenSettings,
+        onOpenProfile = onOpenProfile,
+    ) {
         when {
             loading && projects == null -> CenterMessage("Загрузка проектов…")
             error != null -> RetryState(message = error!!, onRetry = { reloadKey++ })
