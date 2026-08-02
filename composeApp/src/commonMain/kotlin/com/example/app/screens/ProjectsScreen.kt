@@ -4,6 +4,7 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
@@ -34,6 +35,7 @@ import com.composeunstyled.Text
 import com.example.app.components.AppButton
 import com.example.app.components.AppScaffold
 import com.example.app.components.MenuEntry
+import com.example.app.components.PullToRefresh
 import com.example.app.data.AgentizApi
 import com.example.app.data.ApiException
 import com.example.app.data.ProjectDto
@@ -61,6 +63,10 @@ fun ProjectsScreen(
     var loading by remember { mutableStateOf(true) }
     var reloadKey by remember { mutableStateOf(0) }
 
+    // A pull-to-refresh is tracked apart from `loading` so it replaces neither the list nor the
+    // error state: the old content stays put under the spinner until the new content arrives.
+    var refreshing by remember { mutableStateOf(false) }
+
     LaunchedEffect(reloadKey) {
         loading = true
         error = null
@@ -72,6 +78,7 @@ fun ProjectsScreen(
             error = "Ошибка сети: ${e.message ?: "неизвестная ошибка"}"
         } finally {
             loading = false
+            refreshing = false
         }
     }
 
@@ -84,17 +91,50 @@ fun ProjectsScreen(
     ) {
         when {
             loading && projects == null -> CenterMessage("Загрузка проектов…")
-            error != null -> RetryState(message = error!!, onRetry = { reloadKey++ })
-            projects.isNullOrEmpty() -> CenterMessage("У вас пока нет проектов.")
-            else -> LazyColumn(
+            error != null && projects == null -> RetryState(message = error!!, onRetry = { reloadKey++ })
+            else -> PullToRefresh(
+                refreshing = refreshing,
+                onRefresh = {
+                    refreshing = true
+                    reloadKey++
+                },
                 modifier = Modifier.fillMaxSize(),
-                // Padding as content rather than on the list: the cards then scroll under the top
-                // bar's edge instead of stopping short of it, and the last one clears the bottom.
-                contentPadding = PaddingValues(24.dp),
-                verticalArrangement = Arrangement.spacedBy(12.dp),
             ) {
-                items(projects!!, key = { it.id }) { project ->
-                    ProjectCard(project, onClick = { onOpenProject(project) })
+                LazyColumn(
+                    modifier = Modifier.fillMaxSize(),
+                    // Padding as content rather than on the list: the cards then scroll under the
+                    // top bar's edge instead of stopping short of it, and the last one clears the
+                    // bottom.
+                    contentPadding = PaddingValues(24.dp),
+                    verticalArrangement = Arrangement.spacedBy(12.dp),
+                ) {
+                    // A failed refresh keeps the list it could not replace and states why above it.
+                    error?.let { message ->
+                        item(key = "error") {
+                            Text(text = message, style = AppTheme.Label, color = AppTheme.Danger)
+                        }
+                    }
+
+                    if (projects.isNullOrEmpty()) {
+                        // Still a lazy list rather than a plain box: an empty project list has to
+                        // stay pullable, or the only way out of it would be to leave the screen.
+                        item(key = "empty") {
+                            Box(
+                                modifier = Modifier.fillParentMaxSize(),
+                                contentAlignment = Alignment.Center,
+                            ) {
+                                Text(
+                                    text = "У вас пока нет проектов.",
+                                    style = AppTheme.Body,
+                                    color = AppTheme.Muted,
+                                )
+                            }
+                        }
+                    } else {
+                        items(projects!!, key = { it.id }) { project ->
+                            ProjectCard(project, onClick = { onOpenProject(project) })
+                        }
+                    }
                 }
             }
         }

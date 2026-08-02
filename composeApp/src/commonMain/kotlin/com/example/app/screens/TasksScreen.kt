@@ -37,6 +37,7 @@ import com.example.app.components.AppButton
 import com.example.app.components.AppScaffold
 import com.example.app.components.AppTextField
 import com.example.app.components.MenuEntry
+import com.example.app.components.PullToRefresh
 import com.example.app.data.AgentizApi
 import com.example.app.data.ApiException
 import com.example.app.data.ProjectDto
@@ -72,6 +73,10 @@ fun TasksScreen(
     var loading by remember { mutableStateOf(true) }
     var reloadKey by remember { mutableStateOf(0) }
 
+    // A pull-to-refresh is tracked apart from `loading` so it replaces neither the list nor the
+    // composer: the existing tasks stay put under the spinner until the new ones arrive.
+    var refreshing by remember { mutableStateOf(false) }
+
     var composing by remember { mutableStateOf(false) }
     var title by remember { mutableStateOf("") }
     var description by remember { mutableStateOf("") }
@@ -88,6 +93,7 @@ fun TasksScreen(
             error = "Ошибка сети: ${e.message ?: "неизвестная ошибка"}"
         } finally {
             loading = false
+            refreshing = false
         }
     }
 
@@ -120,64 +126,77 @@ fun TasksScreen(
         onOpenProfile = onOpenProfile,
         onBack = onBack,
     ) {
-        // One lazy list for the whole screen: the form is its first item, so it scrolls away as
-        // the user moves down the tasks and the list is never boxed into what is left over.
-        LazyColumn(
+        // Pulling is disabled while the composer is open: the form is the first item of the same
+        // list, and a refresh under a half-typed task would be an odd thing to offer mid-sentence.
+        PullToRefresh(
+            refreshing = refreshing,
+            onRefresh = {
+                refreshing = true
+                reloadKey++
+            },
+            enabled = !composing && !creating,
             modifier = Modifier.fillMaxSize(),
-            contentPadding = PaddingValues(24.dp),
-            verticalArrangement = Arrangement.spacedBy(12.dp),
         ) {
-            item(key = "composer") {
-                if (composing) {
-                    NewTaskForm(
-                        title = title,
-                        onTitleChange = { title = it },
-                        description = description,
-                        onDescriptionChange = { description = it },
-                        busy = creating,
-                        onSubmit = ::submit,
-                        onCancel = {
-                            composing = false
-                            title = ""
-                            description = ""
-                        },
-                    )
-                } else {
-                    AppButton(
-                        text = "Новая задача",
-                        onClick = { composing = true },
-                        modifier = Modifier.fillMaxWidth(),
-                    )
-                }
-            }
-
-            // A create error while the list already has content: keep the list, show the reason.
-            val inlineError = error?.takeIf { tasks != null }
-            if (inlineError != null) {
-                item(key = "error") {
-                    Text(text = inlineError, style = AppTheme.Label, color = AppTheme.Danger)
-                }
-            }
-
-            when {
-                loading && tasks == null -> item(key = "loading") {
-                    CenterBlock("Загрузка задач…", AppTheme.Muted)
-                }
-
-                error != null && tasks == null -> item(key = "retry") {
-                    Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                        Text(text = error!!, style = AppTheme.Body, color = AppTheme.Danger)
-                        Spacer(Modifier.height(16.dp))
-                        AppButton(text = "Повторить", onClick = { reloadKey++ })
+            // One lazy list for the whole screen: the form is its first item, so it scrolls away as
+            // the user moves down the tasks and the list is never boxed into what is left over.
+            LazyColumn(
+                modifier = Modifier.fillMaxSize(),
+                contentPadding = PaddingValues(24.dp),
+                verticalArrangement = Arrangement.spacedBy(12.dp),
+            ) {
+                item(key = "composer") {
+                    if (composing) {
+                        NewTaskForm(
+                            title = title,
+                            onTitleChange = { title = it },
+                            description = description,
+                            onDescriptionChange = { description = it },
+                            busy = creating,
+                            onSubmit = ::submit,
+                            onCancel = {
+                                composing = false
+                                title = ""
+                                description = ""
+                            },
+                        )
+                    } else {
+                        AppButton(
+                            text = "Новая задача",
+                            onClick = { composing = true },
+                            modifier = Modifier.fillMaxWidth(),
+                        )
                     }
                 }
 
-                tasks.isNullOrEmpty() -> item(key = "empty") {
-                    CenterBlock("В проекте пока нет задач.", AppTheme.Muted)
+                // A create or refresh error while the list already has content: keep the list,
+                // show the reason.
+                val inlineError = error?.takeIf { tasks != null }
+                if (inlineError != null) {
+                    item(key = "error") {
+                        Text(text = inlineError, style = AppTheme.Label, color = AppTheme.Danger)
+                    }
                 }
 
-                else -> items(tasks!!, key = { it.id }) { task ->
-                    TaskCard(task, onClick = { onOpenTask(task) })
+                when {
+                    loading && tasks == null -> item(key = "loading") {
+                        CenterBlock("Загрузка задач…", AppTheme.Muted)
+                    }
+
+                    error != null && tasks == null -> item(key = "retry") {
+                        Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                            Text(text = error!!, style = AppTheme.Body, color = AppTheme.Danger)
+                            Spacer(Modifier.height(16.dp))
+                            AppButton(text = "Повторить", onClick = { reloadKey++ })
+                        }
+                    }
+
+                    tasks.isNullOrEmpty() -> item(key = "empty") {
+                        CenterBlock("В проекте пока нет задач.", AppTheme.Muted)
+                    }
+
+                    else -> items(tasks!!, key = { it.id }) { task ->
+                        TaskCard(task, onClick = { onOpenTask(task) })
+                    }
                 }
             }
         }
