@@ -24,6 +24,17 @@ object AppTheme {
     val Danger: Color = Color(0xFFDC2626)
     val Disabled: Color = Color(0xFFA1A1AA)
 
+    /**
+     * The colour a focused control's border takes, and the halo drawn around it. Mirrors shadcn's
+     * `focus-visible:ring-ring` — the ring is the same hue as the border it replaces, drawn at low
+     * opacity so it reads as a glow rather than a second frame.
+     */
+    val Ring: Color = Color(0xFF18181B)
+    val RingHalo: Color = Color(0x2918181B)
+
+    /** Width of the halo outside a focused control's own 1.dp border — shadcn's `ring-[3px]`. */
+    val RingWidth: Dp = 3.dp
+
     val Radius: Dp = 12.dp
 
     val Title: TextStyle = TextStyle(

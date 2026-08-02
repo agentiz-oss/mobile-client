@@ -9,6 +9,7 @@ import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -27,7 +28,9 @@ import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.unit.dp
 import com.composeunstyled.Text
 import com.example.app.components.AppButton
+import com.example.app.components.AppScaffold
 import com.example.app.components.AppTextField
+import com.example.app.components.MenuEntry
 import com.example.app.data.AgentizApi
 import com.example.app.data.ApiException
 import com.example.app.data.CommentDto
@@ -55,6 +58,7 @@ private val ACTIVE_TASK_STATES = setOf("queued", "running")
 fun TaskDetailScreen(
     session: Session,
     taskId: String,
+    menu: List<MenuEntry>,
     onBack: () -> Unit,
 ) {
     val api = remember(session.serverUrl) { AgentizApi(session.serverUrl) }
@@ -125,23 +129,21 @@ fun TaskDetailScreen(
     }
 
     val current = detail
-    Column(
-        modifier = Modifier
-            .fillMaxSize()
-            .background(AppTheme.Background)
-            .padding(24.dp),
+    AppScaffold(
+        title = current?.task?.title ?: "Задача",
+        subtitle = current?.task?.externalId?.takeIf { it.isNotBlank() },
+        menu = menu,
+        onBack = onBack,
     ) {
-        ScreenHeader(
-            title = current?.task?.title ?: "Задача",
-            subtitle = current?.task?.externalId?.takeIf { it.isNotBlank() },
-            onBack = onBack,
-        )
-        Spacer(Modifier.height(20.dp))
-
         when {
             current == null && error != null -> RetryState(message = error!!, onRetry = { reloadKey++ })
             current == null -> CenterMessage("Загрузка задачи…")
-            else -> Column(modifier = Modifier.fillMaxSize().verticalScroll(rememberScrollState())) {
+            else -> Column(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .verticalScroll(rememberScrollState())
+                    .padding(24.dp),
+            ) {
                 TaskSummary(current.task)
 
                 if (error != null) {
@@ -186,6 +188,8 @@ fun TaskDetailScreen(
                     placeholder = "Написать…",
                     enabled = !busy,
                     imeAction = ImeAction.Done,
+                    // Comments here are replies to an agent's report, not one-liners.
+                    minLines = 3,
                 )
                 Spacer(Modifier.height(12.dp))
                 AppButton(
@@ -255,7 +259,16 @@ private fun RunResult(run: RunDto) {
             Spacer(Modifier.height(16.dp))
             SectionTitle("Лог выполнения")
             Spacer(Modifier.height(8.dp))
-            Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+            Column(
+                // A trace of a few hundred debug lines would otherwise push the discussion below
+                // it out of reach. Capped and given its own scroll, the log stays inspectable
+                // without becoming the whole page; heightIn means a short log still shrinks.
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .heightIn(max = 260.dp)
+                    .verticalScroll(rememberScrollState()),
+                verticalArrangement = Arrangement.spacedBy(4.dp),
+            ) {
                 run.logs.forEach { LogLine(it) }
             }
         }

@@ -13,9 +13,18 @@ import androidx.compose.ui.test.performClick
 import androidx.compose.ui.test.performTextInput
 import androidx.compose.ui.test.v2.runComposeUiTest
 import androidx.compose.ui.text.AnnotatedString
+import com.example.app.data.useInMemorySessionStorageForTesting
+import kotlin.test.BeforeTest
 import kotlin.test.Test
 
 class LoginScreenTest {
+
+    /**
+     * App() now restores a persisted session at startup. Without this the suite would read the
+     * developer's own ~/.agentiz/session.json and open on the projects screen.
+     */
+    @BeforeTest
+    fun isolateSessionStorage() = useInMemorySessionStorageForTesting()
 
     @OptIn(ExperimentalTestApi::class)
     @Test

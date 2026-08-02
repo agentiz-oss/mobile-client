@@ -1,5 +1,7 @@
 package com.example.app.components
 
+import androidx.compose.animation.animateColorAsState
+import androidx.compose.animation.core.tween
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
@@ -25,6 +27,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.focus.onFocusChanged
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.Path
 import androidx.compose.ui.graphics.SolidColor
@@ -43,10 +46,18 @@ import com.composeunstyled.Text
 import com.example.app.theme.AppTheme
 
 /**
- * A labelled single-line input built on the foundation [BasicTextField] primitive and styled to
- * match the app's monochrome, rounded look. Kept intentionally minimal — a bordered box, a muted
- * placeholder and an optional password mask — so it works identically on every target. Password
- * fields get a trailing eye button that reveals the typed value.
+ * A labelled input built on the foundation [BasicTextField] primitive and styled to match the
+ * app's monochrome, rounded look. Kept intentionally minimal — a bordered box, a muted placeholder
+ * and an optional password mask — so it works identically on every target. Password fields get a
+ * trailing eye button that reveals the typed value.
+ *
+ * Focus is shown the way shadcn/Radix does it: the border darkens to [AppTheme.Ring] and a soft
+ * halo of the same hue is drawn just outside it. Both are animated so the field does not blink
+ * between states, and the halo is laid out as permanent padding so gaining focus never reflows the
+ * form around it.
+ *
+ * Passing [minLines] greater than 1 makes the field a soft-wrapping multi-line box that grows with
+ * its content up to [maxLines], after which it scrolls internally.
  */
 @Composable
 fun AppTextField(
@@ -58,9 +69,26 @@ fun AppTextField(
     isPassword: Boolean = false,
     enabled: Boolean = true,
     imeAction: ImeAction = ImeAction.Next,
+    minLines: Int = 1,
+    maxLines: Int = if (minLines > 1) 8 else 1,
 ) {
     var passwordVisible by remember { mutableStateOf(false) }
+    var focused by remember { mutableStateOf(false) }
     val masked = isPassword && !passwordVisible
+    val multiline = minLines > 1
+
+    // Focus is only worth showing while the field can actually take input; a disabled field that
+    // still held focus would otherwise keep a ring it cannot act on.
+    val ringVisible = focused && enabled
+    val borderColor by animateColorAsState(
+        targetValue = if (ringVisible) AppTheme.Ring else AppTheme.Border,
+        animationSpec = tween(durationMillis = 150),
+    )
+    val haloColor by animateColorAsState(
+        targetValue = if (ringVisible) AppTheme.RingHalo else Color.Transparent,
+        animationSpec = tween(durationMillis = 150),
+    )
+    val shape = RoundedCornerShape(AppTheme.Radius)
 
     Column(modifier = modifier.fillMaxWidth()) {
         Text(text = label, style = AppTheme.Label, color = AppTheme.Foreground)
@@ -69,7 +97,9 @@ fun AppTextField(
             value = value,
             onValueChange = onValueChange,
             enabled = enabled,
-            singleLine = true,
+            singleLine = !multiline,
+            minLines = minLines,
+            maxLines = maxLines,
             textStyle = AppTheme.Body.copy(color = AppTheme.Foreground),
             cursorBrush = SolidColor(AppTheme.Primary),
             visualTransformation = if (masked) PasswordVisualTransformation() else VisualTransformation.None,
@@ -77,17 +107,26 @@ fun AppTextField(
                 keyboardType = if (isPassword) KeyboardType.Password else KeyboardType.Text,
                 imeAction = imeAction,
             ),
-            modifier = Modifier.fillMaxWidth(),
+            modifier = Modifier
+                .fillMaxWidth()
+                .onFocusChanged { focused = it.isFocused },
             decorationBox = { innerTextField ->
                 Row(
                     modifier = Modifier
                         .fillMaxWidth()
-                        .border(1.dp, AppTheme.Border, RoundedCornerShape(AppTheme.Radius))
-                        .background(AppTheme.Background, RoundedCornerShape(AppTheme.Radius))
+                        // The halo sits outside the field's own border. Reserving its width as
+                        // padding at every state — transparent when unfocused — keeps the field
+                        // the same size focused or not, so focusing one never nudges the others.
+                        .border(AppTheme.RingWidth, haloColor, RingShape)
+                        .padding(AppTheme.RingWidth)
+                        .border(1.dp, borderColor, shape)
+                        .background(AppTheme.Background, shape)
                         // The trailing button carries its own padding, so it only needs enough
                         // room here to sit on the same optical margin as the text.
                         .padding(start = 16.dp, end = if (isPassword) 4.dp else 16.dp),
-                    verticalAlignment = Alignment.CenterVertically,
+                    // A grown multi-line box keeps its eye/placeholder aligned to the first line
+                    // rather than drifting to the middle of the block.
+                    verticalAlignment = if (multiline) Alignment.Top else Alignment.CenterVertically,
                 ) {
                     Box(
                         // The vertical padding lives on the text rather than the row so the
@@ -111,6 +150,12 @@ fun AppTextField(
         )
     }
 }
+
+/**
+ * The halo's shape. It is drawn [AppTheme.RingWidth] outside the field, so its corners have to be
+ * that much rounder than the field's own to stay concentric with them.
+ */
+private val RingShape = RoundedCornerShape(AppTheme.Radius + AppTheme.RingWidth)
 
 /**
  * The eye button shown at the end of a password field. Shows a plain eye while the value is

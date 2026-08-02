@@ -4,7 +4,9 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
@@ -25,13 +27,16 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import com.composeunstyled.Text
 import com.example.app.components.AppButton
+import com.example.app.components.AppScaffold
 import com.example.app.components.AppTextField
+import com.example.app.components.MenuEntry
 import com.example.app.data.AgentizApi
 import com.example.app.data.ApiException
 import com.example.app.data.ProjectDto
@@ -44,11 +49,15 @@ import kotlinx.coroutines.launch
  * Tasks of one project: the list, plus an inline form to add one. Creating a task does not start
  * a pipeline — that is a deliberate second step on the task screen, so a half-written task is
  * never executed by accident.
+ *
+ * The form and the list share one scrolling column. Keeping the form pinned would cost the list
+ * most of a phone screen while composing, and the two-line description field makes that worse.
  */
 @Composable
 fun TasksScreen(
     session: Session,
     project: ProjectDto,
+    menu: List<MenuEntry>,
     onOpenTask: (TaskDto) -> Unit,
     onBack: () -> Unit,
 ) {
@@ -101,62 +110,84 @@ fun TasksScreen(
         }
     }
 
-    Column(
-        modifier = Modifier
-            .fillMaxSize()
-            .background(AppTheme.Background)
-            .padding(24.dp),
+    AppScaffold(
+        title = project.name,
+        subtitle = project.slug.takeIf { it.isNotBlank() },
+        menu = menu,
+        onBack = onBack,
     ) {
-        ScreenHeader(
-            title = project.name,
-            subtitle = project.slug.takeIf { it.isNotBlank() },
-            onBack = onBack,
-        )
-        Spacer(Modifier.height(20.dp))
-
-        if (composing) {
-            NewTaskForm(
-                title = title,
-                onTitleChange = { title = it },
-                description = description,
-                onDescriptionChange = { description = it },
-                busy = creating,
-                onSubmit = ::submit,
-                onCancel = {
-                    composing = false
-                    title = ""
-                    description = ""
-                },
-            )
-        } else {
-            AppButton(
-                text = "Новая задача",
-                onClick = { composing = true },
-                modifier = Modifier.fillMaxWidth(),
-            )
-        }
-        Spacer(Modifier.height(20.dp))
-
-        when {
-            loading && tasks == null -> CenterMessage("Загрузка задач…")
-            error != null && tasks == null -> RetryState(message = error!!, onRetry = { reloadKey++ })
-            tasks.isNullOrEmpty() -> CenterMessage("В проекте пока нет задач.")
-            else -> {
-                // A create error while the list already has content: keep the list, show the reason.
-                if (error != null) {
-                    Text(text = error!!, style = AppTheme.Label, color = AppTheme.Danger)
-                    Spacer(Modifier.height(12.dp))
+        // One lazy list for the whole screen: the form is its first item, so it scrolls away as
+        // the user moves down the tasks and the list is never boxed into what is left over.
+        LazyColumn(
+            modifier = Modifier.fillMaxSize(),
+            contentPadding = PaddingValues(24.dp),
+            verticalArrangement = Arrangement.spacedBy(12.dp),
+        ) {
+            item(key = "composer") {
+                if (composing) {
+                    NewTaskForm(
+                        title = title,
+                        onTitleChange = { title = it },
+                        description = description,
+                        onDescriptionChange = { description = it },
+                        busy = creating,
+                        onSubmit = ::submit,
+                        onCancel = {
+                            composing = false
+                            title = ""
+                            description = ""
+                        },
+                    )
+                } else {
+                    AppButton(
+                        text = "Новая задача",
+                        onClick = { composing = true },
+                        modifier = Modifier.fillMaxWidth(),
+                    )
                 }
-                LazyColumn(
-                    modifier = Modifier.fillMaxSize(),
-                    verticalArrangement = Arrangement.spacedBy(12.dp),
-                ) {
-                    items(tasks!!, key = { it.id }) { task ->
-                        TaskCard(task, onClick = { onOpenTask(task) })
+            }
+
+            // A create error while the list already has content: keep the list, show the reason.
+            val inlineError = error?.takeIf { tasks != null }
+            if (inlineError != null) {
+                item(key = "error") {
+                    Text(text = inlineError, style = AppTheme.Label, color = AppTheme.Danger)
+                }
+            }
+
+            when {
+                loading && tasks == null -> item(key = "loading") {
+                    CenterBlock("Загрузка задач…", AppTheme.Muted)
+                }
+
+                error != null && tasks == null -> item(key = "retry") {
+                    Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                        Text(text = error!!, style = AppTheme.Body, color = AppTheme.Danger)
+                        Spacer(Modifier.height(16.dp))
+                        AppButton(text = "Повторить", onClick = { reloadKey++ })
                     }
+                }
+
+                tasks.isNullOrEmpty() -> item(key = "empty") {
+                    CenterBlock("В проекте пока нет задач.", AppTheme.Muted)
+                }
+
+                else -> items(tasks!!, key = { it.id }) { task ->
+                    TaskCard(task, onClick = { onOpenTask(task) })
                 }
             }
         }
+    }
+}
+
+/** A status line sized as a list item — the list itself owns the scrolling around it. */
+@Composable
+private fun CenterBlock(text: String, color: Color) {
+    Box(
+        modifier = Modifier.fillMaxWidth().padding(vertical = 32.dp),
+        contentAlignment = Alignment.Center,
+    ) {
+        Text(text = text, style = AppTheme.Body, color = color)
     }
 }
 
@@ -192,6 +223,9 @@ private fun NewTaskForm(
             placeholder = "Подробности (необязательно)",
             enabled = !busy,
             imeAction = ImeAction.Done,
+            // A description is prose, not a line: let it wrap and grow rather than scrolling
+            // sideways through what the user just typed.
+            minLines = 3,
         )
         Spacer(Modifier.height(16.dp))
         Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
@@ -264,53 +298,4 @@ fun TaskStatusBadge(status: String) {
             .background(color, RoundedCornerShape(999.dp))
             .padding(horizontal = 10.dp, vertical = 3.dp),
     )
-}
-
-/** Title row with a back affordance, shared by the task list and the task screen. */
-@Composable
-fun ScreenHeader(title: String, subtitle: String?, onBack: () -> Unit) {
-    Row(
-        modifier = Modifier.fillMaxWidth(),
-        horizontalArrangement = Arrangement.SpaceBetween,
-        verticalAlignment = Alignment.CenterVertically,
-    ) {
-        Column(modifier = Modifier.weight(1f).padding(end = 16.dp)) {
-            Text(
-                text = title,
-                style = AppTheme.Subtitle,
-                color = AppTheme.Foreground,
-                maxLines = 2,
-                overflow = TextOverflow.Ellipsis,
-            )
-            if (subtitle != null) {
-                Spacer(Modifier.height(4.dp))
-                Text(text = subtitle, style = AppTheme.Label, color = AppTheme.Muted)
-            }
-        }
-        AppButton(text = "Назад", onClick = onBack)
-    }
-}
-
-@Composable
-fun CenterMessage(text: String) {
-    Column(
-        modifier = Modifier.fillMaxSize(),
-        horizontalAlignment = Alignment.CenterHorizontally,
-        verticalArrangement = Arrangement.Center,
-    ) {
-        Text(text = text, style = AppTheme.Body, color = AppTheme.Muted)
-    }
-}
-
-@Composable
-fun RetryState(message: String, onRetry: () -> Unit) {
-    Column(
-        modifier = Modifier.fillMaxSize(),
-        horizontalAlignment = Alignment.CenterHorizontally,
-        verticalArrangement = Arrangement.Center,
-    ) {
-        Text(text = message, style = AppTheme.Body, color = AppTheme.Danger)
-        Spacer(Modifier.height(16.dp))
-        AppButton(text = "Повторить", onClick = onRetry)
-    }
 }

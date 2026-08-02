@@ -5,6 +5,7 @@ import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
@@ -13,7 +14,9 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
@@ -29,6 +32,8 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import com.composeunstyled.Text
 import com.example.app.components.AppButton
+import com.example.app.components.AppScaffold
+import com.example.app.components.MenuEntry
 import com.example.app.data.AgentizApi
 import com.example.app.data.ApiException
 import com.example.app.data.ProjectDto
@@ -40,7 +45,12 @@ import com.example.app.theme.AppTheme
  * Handles the four states a network list has — loading, error (with retry), empty, and populated.
  */
 @Composable
-fun ProjectsScreen(session: Session, onOpenProject: (ProjectDto) -> Unit, onLogout: () -> Unit) {
+fun ProjectsScreen(
+    session: Session,
+    menu: List<MenuEntry>,
+    userLabel: String,
+    onOpenProject: (ProjectDto) -> Unit,
+) {
     val api = remember(session.serverUrl) { AgentizApi(session.serverUrl) }
     DisposableEffect(api) { onDispose { api.close() } }
 
@@ -63,24 +73,16 @@ fun ProjectsScreen(session: Session, onOpenProject: (ProjectDto) -> Unit, onLogo
         }
     }
 
-    Column(
-        modifier = Modifier
-            .fillMaxSize()
-            .background(AppTheme.Background)
-            .padding(24.dp),
-    ) {
-        Header(
-            userLabel = session.user.fullName?.takeIf { it.isNotBlank() } ?: session.user.login,
-            onLogout = onLogout,
-        )
-        Spacer(Modifier.height(24.dp))
-
+    AppScaffold(title = "Проекты", subtitle = userLabel, menu = menu) {
         when {
-            loading && projects == null -> CenterText("Загрузка проектов…")
-            error != null -> ErrorState(message = error!!, onRetry = { reloadKey++ })
-            projects.isNullOrEmpty() -> CenterText("У вас пока нет проектов.")
+            loading && projects == null -> CenterMessage("Загрузка проектов…")
+            error != null -> RetryState(message = error!!, onRetry = { reloadKey++ })
+            projects.isNullOrEmpty() -> CenterMessage("У вас пока нет проектов.")
             else -> LazyColumn(
                 modifier = Modifier.fillMaxSize(),
+                // Padding as content rather than on the list: the cards then scroll under the top
+                // bar's edge instead of stopping short of it, and the last one clears the bottom.
+                contentPadding = PaddingValues(24.dp),
                 verticalArrangement = Arrangement.spacedBy(12.dp),
             ) {
                 items(projects!!, key = { it.id }) { project ->
@@ -88,22 +90,6 @@ fun ProjectsScreen(session: Session, onOpenProject: (ProjectDto) -> Unit, onLogo
                 }
             }
         }
-    }
-}
-
-@Composable
-private fun Header(userLabel: String, onLogout: () -> Unit) {
-    Row(
-        modifier = Modifier.fillMaxWidth(),
-        horizontalArrangement = Arrangement.SpaceBetween,
-        verticalAlignment = Alignment.CenterVertically,
-    ) {
-        Column(modifier = Modifier.padding(end = 16.dp)) {
-            Text(text = "Проекты", style = AppTheme.Title, color = AppTheme.Foreground)
-            Spacer(Modifier.height(4.dp))
-            Text(text = userLabel, style = AppTheme.Label, color = AppTheme.Muted)
-        }
-        AppButton(text = "Выйти", onClick = onLogout)
     }
 }
 
@@ -128,7 +114,9 @@ private fun ProjectCard(project: ProjectDto, onClick: () -> Unit) {
                 text = project.name,
                 style = AppTheme.Subtitle,
                 color = AppTheme.Foreground,
-                modifier = Modifier.padding(end = 12.dp),
+                maxLines = 2,
+                overflow = TextOverflow.Ellipsis,
+                modifier = Modifier.weight(1f).padding(end = 12.dp),
             )
             StatusBadge(active = project.isActive)
         }
@@ -163,26 +151,36 @@ private fun StatusBadge(active: Boolean) {
     )
 }
 
+/**
+ * A centred status line. Scrollable because it is also the error surface: a long message from the
+ * server must stay readable on a short window rather than being clipped top and bottom.
+ */
 @Composable
-private fun ErrorState(message: String, onRetry: () -> Unit) {
+fun CenterMessage(text: String) {
     Column(
-        modifier = Modifier.fillMaxSize(),
+        modifier = Modifier
+            .fillMaxSize()
+            .verticalScroll(rememberScrollState())
+            .padding(24.dp),
+        horizontalAlignment = Alignment.CenterHorizontally,
+        verticalArrangement = Arrangement.Center,
+    ) {
+        Text(text = text, style = AppTheme.Body, color = AppTheme.Muted)
+    }
+}
+
+@Composable
+fun RetryState(message: String, onRetry: () -> Unit) {
+    Column(
+        modifier = Modifier
+            .fillMaxSize()
+            .verticalScroll(rememberScrollState())
+            .padding(24.dp),
         horizontalAlignment = Alignment.CenterHorizontally,
         verticalArrangement = Arrangement.Center,
     ) {
         Text(text = message, style = AppTheme.Body, color = AppTheme.Danger)
         Spacer(Modifier.height(16.dp))
         AppButton(text = "Повторить", onClick = onRetry)
-    }
-}
-
-@Composable
-private fun CenterText(text: String) {
-    Column(
-        modifier = Modifier.fillMaxSize(),
-        horizontalAlignment = Alignment.CenterHorizontally,
-        verticalArrangement = Arrangement.Center,
-    ) {
-        Text(text = text, style = AppTheme.Body, color = AppTheme.Muted)
     }
 }
