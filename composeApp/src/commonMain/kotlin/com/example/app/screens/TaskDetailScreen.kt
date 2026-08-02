@@ -13,6 +13,7 @@ import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.text.selection.SelectionContainer
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
@@ -263,17 +264,22 @@ private fun RunResult(run: RunDto) {
             Spacer(Modifier.height(16.dp))
             SectionTitle("Лог выполнения")
             Spacer(Modifier.height(8.dp))
-            Column(
-                // A trace of a few hundred debug lines would otherwise push the discussion below
-                // it out of reach. Capped and given its own scroll, the log stays inspectable
-                // without becoming the whole page; heightIn means a short log still shrinks.
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .heightIn(max = 260.dp)
-                    .verticalScroll(rememberScrollState()),
-                verticalArrangement = Arrangement.spacedBy(4.dp),
-            ) {
-                run.logs.forEach { LogLine(it) }
+            // Keep the process trace selectable: workers can emit details that need to be copied
+            // into an issue or a reply. SelectionContainer provides the native copy action on
+            // touch devices and Cmd/Ctrl+C support on desktop.
+            SelectionContainer {
+                Column(
+                    // A trace of a few hundred debug lines would otherwise push the discussion below
+                    // it out of reach. Capped and given its own scroll, the log stays inspectable
+                    // without becoming the whole page; heightIn means a short log still shrinks.
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .heightIn(max = 260.dp)
+                        .verticalScroll(rememberScrollState()),
+                    verticalArrangement = Arrangement.spacedBy(4.dp),
+                ) {
+                    run.logs.forEach { LogLine(it) }
+                }
             }
         }
 
