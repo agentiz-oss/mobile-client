@@ -34,6 +34,7 @@ import androidx.compose.ui.unit.Velocity
 import androidx.compose.ui.unit.dp
 import com.example.app.platform.hapticActionComplete
 import com.example.app.theme.AppTheme
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import kotlin.math.abs
 import kotlin.math.min
@@ -54,6 +55,14 @@ private val IndicatorSize = 22.dp
 private const val OverdragResistance = 0.4f
 
 /**
+ * How long the pulled-open state stays up once a refresh starts, however fast the server answers.
+ * A cached response can land in a few frames, and closing that quickly reads as the gesture having
+ * failed rather than as the list having reloaded. The floor never truncates a slower request — it
+ * only sets the shortest refresh the user can be shown.
+ */
+private const val MinimumVisibleDuration = 2_000L
+
+/**
  * Wraps a scrollable with the standard pull-down-to-refresh gesture: drag down at the top of the
  * list, release past the threshold, and [onRefresh] runs while a spinner holds below the top bar.
  * When the caller flips [refreshing] back to false the indicator retracts and the screen returns to
@@ -63,8 +72,9 @@ private const val OverdragResistance = 0.4f
  * compose-unstyled only, and pulling in a whole Material theme for one spinner would drag its type
  * and colour system along with it.
  *
- * The indicator is an overlay rather than a layout offset, so the wrapped list never moves — its
- * scroll position and item bounds are untouched by the gesture.
+ * The whole content area travels with the finger, the way the gesture behaves in most apps — the
+ * page peels down off the top bar and the spinner rides in the gap it opens. The list is moved at
+ * placement time, so its scroll position and item bounds are unaffected by the trip.
  */
 @Composable
 fun PullToRefresh(
@@ -76,7 +86,6 @@ fun PullToRefresh(
 ) {
     val scope = rememberCoroutineScope()
     val currentOnRefresh by rememberUpdatedState(onRefresh)
-    val currentRefreshing by rememberUpdatedState(refreshing)
 
     val density = LocalDensity.current
     val triggerPx = with(density) { TriggerDistance.toPx() }
@@ -90,20 +99,37 @@ fun PullToRefresh(
     // threshold before lifting the finger cannot fire two requests.
     var fired by remember { mutableStateOf(false) }
 
+    // Held open until the minimum has elapsed even after `refreshing` goes false. A request that
+    // answers in 80ms would otherwise flash the indicator and snap shut, which reads as a glitch
+    // rather than as a refresh — see [MinimumVisibleDuration].
+    var holding by remember { mutableStateOf(false) }
+    val open = refreshing || holding
+
+    // The gesture reads the combined flag, not `refreshing`: while the minimum is still being paid
+    // out the indicator is up and a second pull must not start another request behind it.
+    val currentOpen by rememberUpdatedState(open)
+
     // Crossing the threshold ticks once — the confirmation that releasing now will do something.
     LaunchedEffect(triggerPx) {
         snapshotFlow { offset.value >= triggerPx }
-            .collect { crossed -> if (crossed && !currentRefreshing) hapticActionComplete() }
+            .collect { crossed -> if (crossed && !currentOpen) hapticActionComplete() }
     }
 
-    // The caller owns `refreshing`, so the indicator holds for exactly as long as the real request
-    // is in flight and retracts only once the new data has landed.
-    LaunchedEffect(refreshing) {
-        if (refreshing) {
+    // One effect owns the whole open/close cycle, so the two animations can never run against each
+    // other over the same [offset]. It is keyed on `open`, whose rising edge is the release itself
+    // — keying on `refreshing` would restart the body when a fast request completes and cancel the
+    // very delay that is meant to outlive it.
+    LaunchedEffect(open) {
+        if (open) {
             offset.animateTo(restingPx, tween(durationMillis = 180))
+            delay(MinimumVisibleDuration)
+            // The minimum is paid; from here `refreshing` alone decides. A request still in flight
+            // keeps `open` true through its own flag and this effect simply idles, and the falling
+            // edge that eventually follows re-enters the body below.
+            holding = false
         } else {
             fired = false
-            if (offset.value != 0f) offset.animateTo(0f, tween(durationMillis = 220))
+            if (offset.value != 0f) offset.animateTo(0f, tween(durationMillis = 260))
         }
     }
 
@@ -115,7 +141,7 @@ fun PullToRefresh(
              * user tries to scroll away from the top.
              */
             override fun onPreScroll(available: Offset, source: NestedScrollSource): Offset {
-                if (!enabled || currentRefreshing || source != NestedScrollSource.UserInput) return Offset.Zero
+                if (!enabled || currentOpen || source != NestedScrollSource.UserInput) return Offset.Zero
                 if (available.y >= 0f || offset.value <= 0f) return Offset.Zero
                 val consumed = -min(abs(available.y), offset.value)
                 scope.launch { offset.snapTo((offset.value + consumed).coerceAtLeast(0f)) }
@@ -131,7 +157,7 @@ fun PullToRefresh(
                 available: Offset,
                 source: NestedScrollSource,
             ): Offset {
-                if (!enabled || currentRefreshing || source != NestedScrollSource.UserInput) return Offset.Zero
+                if (!enabled || currentOpen || source != NestedScrollSource.UserInput) return Offset.Zero
                 if (available.y <= 0f) return Offset.Zero
                 val resistance = if (offset.value >= triggerPx) OverdragResistance else 1f
                 scope.launch { offset.snapTo(offset.value + available.y * resistance) }
@@ -145,10 +171,14 @@ fun PullToRefresh(
              */
             override suspend fun onPreFling(available: Velocity): Velocity {
                 if (offset.value <= 0f) return Velocity.Zero
-                if (!currentRefreshing && !fired && offset.value >= triggerPx) {
+                if (!currentOpen && !fired && offset.value >= triggerPx) {
                     fired = true
+                    // Held from the release rather than from the first `refreshing = true`: the
+                    // caller may set that flag a frame or two later, and the minimum should cover
+                    // the whole visible refresh, not just the part the caller knows about.
+                    holding = true
                     currentOnRefresh()
-                } else if (!currentRefreshing) {
+                } else if (!currentOpen) {
                     offset.animateTo(0f, tween(durationMillis = 220))
                 }
                 return Velocity(0f, available.y)
@@ -157,13 +187,15 @@ fun PullToRefresh(
     }
 
     Box(modifier = modifier.nestedScroll(connection)) {
-        content()
+        // The indicator sits behind the content and is revealed by it rather than drawn over it,
+        // so the page reads as a sheet being peeled down off whatever is underneath.
         RefreshIndicator(
             offsetPx = offset.value,
             triggerPx = triggerPx,
-            refreshing = refreshing,
+            refreshing = open,
             modifier = Modifier.align(Alignment.TopCenter),
         )
+        Box(modifier = Modifier.offsetPx(offset.value)) { content() }
     }
 }
 
@@ -192,12 +224,13 @@ private fun RefreshIndicator(
         label = "refresh-spin-angle",
     )
 
-    // The spinner trails the finger by its own height, so it emerges from under the top bar rather
-    // than appearing already detached from it.
-    val lift = with(LocalDensity.current) { IndicatorSize.toPx() }
+    // Centred in the gap the content has opened above it, so the spinner stays put relative to the
+    // space it lives in instead of racing the page down the screen.
+    val indicatorPx = with(LocalDensity.current) { IndicatorSize.toPx() }
+    val y = ((offsetPx - indicatorPx) / 2f).coerceAtLeast(0f)
 
     Box(
-        modifier = modifier.offsetPx(offsetPx - lift).size(IndicatorSize),
+        modifier = modifier.offsetPx(y).size(IndicatorSize),
         contentAlignment = Alignment.Center,
     ) {
         Canvas(modifier = Modifier.size(IndicatorSize)) {

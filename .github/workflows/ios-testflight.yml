@@ -232,8 +232,9 @@ jobs:
       - name: Restore Kotlin/Native build output
         # setup-gradle caches ~/.gradle but not the project's own build
         # directories, where Kotlin/Native keeps the klibs and incremental state
-        # the compile step reuses. Worth ~35MB and most of the compile time; the
-        # link step deliberately gets nothing from this (see below).
+        # the compile step reuses (~35MB). Linking is not restored from here —
+        # linkRelease* is not a cacheable Gradle task — so the pre-build step
+        # below still pays for it once.
         id: build-output-cache
         uses: actions/cache/restore@v4
         with:
@@ -245,19 +246,17 @@ jobs:
             kn-build-${{ runner.os }}-${{ hashFiles('gradle/libs.versions.toml', 'composeApp/build.gradle.kts', 'settings.gradle.kts', 'gradle.properties') }}-
             kn-build-${{ runner.os }}-
 
-      - name: Compile Kotlin sources
-        # Compile only — the framework itself is linked once, by the Xcode build
-        # phase inside the archive below. Linking here as well cost a full extra
-        # pass (~170s of a 3m34s step) because linkRelease* is not a cacheable
-        # Gradle task: its output depends on absolute ~/.konan paths and the
-        # Xcode toolchain, so it can never be restored from cache or matched
-        # UP-TO-DATE after a tar round-trip, and simply ran twice per job.
+      - name: Pre-build Kotlin framework
+        # Links the framework here so the Xcode build phase below finds it
+        # already built and matches it UP-TO-DATE, which is why that phase costs
+        # ~105s instead of ~400s. Do not narrow this to compileKotlinIosArm64:
+        # measured on run 30733145003, that drops this step to 19s but pushes
+        # linking into the archive and takes the job from 434s to 545s.
         #
-        # This step stays because it is what makes Kotlin compile errors legible:
-        # they surface here instead of buried in the xcodebuild log. That is
-        # exactly what compileKotlinIosArm64 gives us, at ~30s. The warmed-up
-        # Gradle daemon is still handed to the Xcode phase.
-        run: ./gradlew :composeApp:compileKotlinIosArm64 --build-cache
+        # It also keeps Kotlin compile errors legible — they surface here rather
+        # than buried in the xcodebuild log — and hands the Xcode phase a warm
+        # Gradle daemon instead of a cold JVM.
+        run: ./gradlew :composeApp:linkReleaseFrameworkIosArm64 --build-cache
 
       - name: Save Kotlin/Native (Konan) toolchain
         # Saved here rather than at job end so the toolchain is preserved even if
