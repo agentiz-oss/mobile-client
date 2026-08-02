@@ -52,10 +52,10 @@ fail. Drop this flag once the CI machine gets an SDK that includes the class.
 Pull the unsigned bundle back, then run the signing script:
 
     rsync -az -e "ssh ... -J xziy@ny.m42.cx:2522" \
-      ci@10.10.0.115:'~/build/mobile-client/build/DD/Build/Products/Release-iphoneos/HelloCompose.app' \
+      ci@10.10.0.115:'~/build/mobile-client/build/DD/Build/Products/Release-iphoneos/Agentiz.app' \
       build/remote/
 
-    ./sign-and-install.sh build/remote/HelloCompose.app
+    ./sign-and-install.sh build/remote/Agentiz.app
 
 The script signs with certificate SHA-1 `60A1A941...` rather than by name,
 because two certificates in the keychain share the same common name and

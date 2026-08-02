@@ -1,4 +1,4 @@
-rootProject.name = "HelloCompose"
+rootProject.name = "Agentiz"
 
 pluginManagement {
     repositories {
