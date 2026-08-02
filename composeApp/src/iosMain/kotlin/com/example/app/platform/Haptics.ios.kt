@@ -1,7 +1,7 @@
 package com.example.app.platform
 
 import platform.UIKit.UIImpactFeedbackGenerator
-import platform.UIKit.UIImpactFeedbackStyleLight
+import platform.UIKit.UIImpactFeedbackStyle
 
 /**
  * Taptic Engine impact. Light style is the one iOS itself uses to acknowledge a completed action —
@@ -13,7 +13,9 @@ import platform.UIKit.UIImpactFeedbackStyleLight
  * disabled system haptics or the device has no Taptic Engine.
  */
 actual fun hapticActionComplete() {
-    val generator = UIImpactFeedbackGenerator(style = UIImpactFeedbackStyleLight)
+    // The style is an enum entry, not a top-level constant: cinterop maps the Objective-C
+    // NS_ENUM to a Kotlin enum class nested under its own name.
+    val generator = UIImpactFeedbackGenerator(style = UIImpactFeedbackStyle.UIImpactFeedbackStyleLight)
     generator.prepare()
     generator.impactOccurred()
 }
