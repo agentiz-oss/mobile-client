@@ -8,7 +8,6 @@ import androidx.compose.foundation.gestures.Orientation
 import androidx.compose.foundation.gestures.draggable
 import androidx.compose.foundation.gestures.rememberDraggableState
 import androidx.compose.foundation.interaction.MutableInteractionSource
-import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxScope
 import androidx.compose.foundation.layout.Column
@@ -16,8 +15,8 @@ import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.fillMaxHeight
-import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
@@ -40,6 +39,8 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.TransformOrigin
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.contentDescription
@@ -66,10 +67,24 @@ data class MenuEntry(
 private val EdgeSwipeWidth = 24.dp
 
 /**
- * A fixed width, not a measured one: the panel is not composed while the drawer is closed, so the
- * first frame of an edge swipe needs a travel distance that already exists.
+ * How far the screen travels — and therefore how much menu is uncovered. A fixed width, not a
+ * measured one: the menu is not composed while the drawer is closed, so the first frame of an edge
+ * swipe needs a travel distance that already exists.
  */
 private val DrawerWidth = 280.dp
+
+/**
+ * How far the pushed-back screen shrinks, which is what makes it read as a card lifted off the
+ * menu. Kept shallow: the inset this leaves at the top and bottom grows twice as fast as the number
+ * suggests, and anything deeper reads as the screen falling away rather than sliding aside.
+ */
+private const val PushedScale = 0.94f
+
+/** Corner radius of the screen at full push; interpolated from square as it lifts. */
+private val PushedCorner = 24.dp
+
+/** Drop shadow under the pushed-back screen, so it sits visibly above the menu. */
+private val ShadowElevation = 16.dp
 
 /** Fling speed, in px/s, past which the drawer opens or closes regardless of how far it travelled. */
 private const val FlingVelocity = 400f
@@ -90,13 +105,13 @@ private fun rememberDrawerState(): DrawerState {
 }
 
 /**
- * The drawer's position, in pixels of horizontal travel from fully-closed (0f) to fully-open
+ * How far the screen has been pushed aside, in pixels, from fully-closed (0f) to fully-open
  * ([width]).
  *
- * Offset is the single source of truth for both the panel and the scrim: dragging writes to it
- * directly so the panel tracks the finger 1:1, and the open/close animations write to the same
- * value, so a gesture can interrupt an animation mid-flight without the two fighting over the
- * panel's position.
+ * This offset is the single source of truth for the whole effect — the card's travel, its scale,
+ * its corners and the menu's fade all derive from it. Dragging writes to it directly so the screen
+ * tracks the finger 1:1, and the open/close animations write to the same value, so a gesture can
+ * interrupt an animation mid-flight without the two fighting over the position.
  */
 private class DrawerState(
     private val scope: kotlinx.coroutines.CoroutineScope,
@@ -114,7 +129,7 @@ private class DrawerState(
     var width by mutableFloatStateOf(initialWidth)
         private set
 
-    /** 0f closed, 1f fully open. Drives the scrim alpha and who owns which gesture. */
+    /** 0f closed, 1f fully open. Drives the scale, the corners, the fade and who owns a gesture. */
     val progress: Float get() = if (width <= 0f) 0f else (offsetPx / width).coerceIn(0f, 1f)
 
     /** The running open/close animation, cancelled the moment a finger touches the panel. */
@@ -184,8 +199,9 @@ private class DrawerState(
  * screen's own content below it. Navigation and signing out live in the drawer the burger opens,
  * so no screen has to spend its header on them.
  *
- * The bar and the drawer are pinned; only [content] scrolls, which is what keeps the burger
- * reachable from anywhere in a long task log.
+ * The drawer does not slide over the screen — it lies *underneath* it. Opening pushes the whole
+ * screen right and scales it down to reveal the menu already sitting there, so the two feel like
+ * one stack of cards rather than a panel flying in.
  */
 @Composable
 fun AppScaffold(
@@ -200,33 +216,117 @@ fun AppScaffold(
     Box(
         modifier = Modifier
             .fillMaxSize()
-            .background(AppTheme.Background)
-            // Applied to the frame rather than to each screen so content clears the status bar
-            // and the home indicator on every target exactly once.
-            .windowInsetsPadding(WindowInsets.safeDrawing),
+            // The backdrop the menu sits on. It shows through the rounded corners of the
+            // pushed-back screen, so it is a shade darker than the card itself.
+            .background(AppTheme.MenuBackground),
     ) {
-        Column(modifier = Modifier.fillMaxSize()) {
-            TopBar(
-                title = title,
-                subtitle = subtitle,
-                onBack = onBack,
-                onOpenMenu = { drawer.open() },
-            )
-            // weight, not fillMaxSize: the content takes the height the bar leaves rather than
-            // the whole frame, which is what keeps a scrolling list from running under the bar.
-            Box(modifier = Modifier.fillMaxWidth().weight(1f)) { content() }
+        // Drawn first, so it is genuinely behind the screen rather than over it. Its own insets:
+        // the frame can no longer pad for everyone now that the two layers move independently.
+        MenuPanel(drawer = drawer, entries = menu)
+
+        ContentSheet(drawer = drawer) {
+            Column(modifier = Modifier.fillMaxSize()) {
+                TopBar(
+                    title = title,
+                    subtitle = subtitle,
+                    onBack = onBack,
+                    onOpenMenu = { drawer.open() },
+                )
+                // weight, not fillMaxSize: the content takes the height the bar leaves rather than
+                // the whole frame, which keeps a scrolling list from running under the bar.
+                Box(modifier = Modifier.fillMaxWidth().weight(1f)) { content() }
+            }
         }
 
-        // A strip along the left edge that opens the drawer by drag. It sits over the content
-        // rather than wrapping it, so a horizontally scrolling child anywhere else on the screen
-        // keeps its own gestures — only the edge belongs to the drawer.
-        EdgeSwipeCatcher(drawer = drawer)
-
-        // The scrim and the drawer are siblings of the column, drawn after it, so they cover the
-        // bar as well as the content — a half-covered top bar would look like a rendering bug.
-        Scrim(drawer = drawer)
-        MenuDrawer(drawer = drawer, entries = menu)
+        // Last, so it sits above the card it drives — and outside it, so the card's scale cannot
+        // distort the finger deltas.
+        DrawerGestureSurface(drawer = drawer)
     }
+}
+
+/**
+ * The screen itself, as a card that slides and shrinks to uncover the menu. Purely presentational —
+ * the gestures that move it belong to [DrawerGestureSurface], which sits outside this layer.
+ */
+@Composable
+private fun ContentSheet(drawer: DrawerState, content: @Composable () -> Unit) {
+    Box(
+        modifier = Modifier
+            .fillMaxSize()
+            .graphicsLayer {
+                val p = drawer.progress
+                translationX = drawer.offsetPx
+                // Shrink towards the left edge so the card pivots around the point the finger is
+                // pulling from; scaling about the centre would make it drift away from the touch.
+                val scale = 1f - (1f - PushedScale) * p
+                scaleX = scale
+                scaleY = scale
+                transformOrigin = TransformOrigin(0f, 0.5f)
+                // Corners round off only as the card lifts: a full-screen sheet with rounded
+                // corners would show slivers of backdrop at rest.
+                shape = RoundedCornerShape(PushedCorner * p)
+                clip = true
+                shadowElevation = ShadowElevation.toPx() * p
+            }
+            .background(AppTheme.Background),
+    ) {
+        // Padded here, not on the frame: the card is what the user reads, and it is the thing that
+        // has to clear the status bar and the home indicator.
+        Box(modifier = Modifier.fillMaxSize().windowInsetsPadding(WindowInsets.safeDrawing)) {
+            content()
+        }
+    }
+}
+
+/**
+ * The invisible surface that owns every drawer gesture: a strip down the left edge while closed,
+ * the whole screen once open.
+ *
+ * Deliberately a sibling of the card rather than a child of it. `draggable` reports deltas in the
+ * coordinate space of its own layer, so a grab area living inside the scaled card would report
+ * movement divided by that scale — at 0.88 the drawer would run about 1.14x ahead of the finger
+ * instead of tracking it. Out here the space is the screen's, and a pixel of finger is a pixel of
+ * travel.
+ */
+@Composable
+private fun BoxScope.DrawerGestureSurface(drawer: DrawerState) {
+    val open = drawer.progress > 0f
+    Box(
+        modifier = Modifier
+            .align(Alignment.CenterStart)
+            .fillMaxHeight()
+            // Tracks the card: starts where the card starts and stops where it ends, so the strip
+            // of menu uncovered to its left keeps receiving its own taps.
+            .offset { IntOffset(drawer.offsetPx.roundToInt(), 0) }
+            .then(
+                // The card is drawn at PushedScale, so that fraction of the screen is exactly how
+                // much of it the finger can still reach.
+                if (open) {
+                    Modifier.fillMaxWidth(PushedScale)
+                } else {
+                    Modifier.width(EdgeSwipeWidth)
+                },
+            )
+            .draggable(
+                orientation = Orientation.Horizontal,
+                state = rememberDraggableState { delta -> drawer.drag(delta) },
+                onDragStarted = { drawer.onDragStarted() },
+                onDragStopped = { velocity -> drawer.settle(velocity) },
+            )
+            // Once open this also swallows taps meant for the pushed-aside screen and turns them
+            // into a dismissal — the card doubles as its own scrim.
+            .then(
+                if (open) {
+                    Modifier.clickable(
+                        interactionSource = remember { MutableInteractionSource() },
+                        indication = null,
+                        onClick = { drawer.close() },
+                    )
+                } else {
+                    Modifier
+                },
+            ),
+    )
 }
 
 /**
@@ -308,37 +408,28 @@ private fun TopBar(
 }
 
 /**
- * The panel itself. It is always composed and always laid out at its full width, then pushed off
- * the left edge by [DrawerState.offsetPx] — that is what lets a drag move it a pixel at a time
- * instead of playing a canned enter animation.
+ * The menu, lying still underneath the screen. Unlike a conventional drawer it never moves: the
+ * screen is what slides off it, so the entries stay put while the card uncovers them.
+ *
+ * A fully-closed menu is not composed at all — its rows would otherwise be read out by a screen
+ * reader and matched by `onNodeWithText` while nobody can see them.
  */
 @Composable
-private fun BoxScope.MenuDrawer(drawer: DrawerState, entries: List<MenuEntry>) {
-    // A fully-closed drawer is not on screen, so it is not composed: its rows would otherwise be
-    // read out by a screen reader and matched by `onNodeWithText` while nobody can see them. The
-    // panel's width is a constant rather than a measurement, so the drag can still position it on
-    // the very first frame of a swipe, before this content has ever been laid out.
+private fun BoxScope.MenuPanel(drawer: DrawerState, entries: List<MenuEntry>) {
     if (drawer.progress <= 0f) return
 
     Column(
         modifier = Modifier
             .align(Alignment.CenterStart)
             .fillMaxHeight()
-            // A drawer, not a page: wide enough for the longest entry, but never the whole
-            // window, so the dimmed screen behind it stays visible to tap back to.
+            // Only ever as wide as the screen travels, so no entry can hide under the card.
             .width(DrawerWidth)
-            // Parked one full width to the left when closed; every intermediate position is the
-            // finger's. Read inside the lambda so a drag repositions the panel in the layout phase
-            // alone, without recomposing the menu on every frame.
-            .offset { IntOffset((drawer.offsetPx - drawer.width).roundToInt(), 0) }
-            .background(AppTheme.Background)
-            // Dragging the panel itself pushes it back.
-            .draggable(
-                orientation = Orientation.Horizontal,
-                state = rememberDraggableState { delta -> drawer.drag(delta) },
-                onDragStarted = { drawer.onDragStarted() },
-                onDragStopped = { velocity -> drawer.settle(velocity) },
-            ),
+            // Fades and settles the last few pixels into place, so the entries do not appear
+            // fully-formed the instant the card starts to move.
+            .graphicsLayer { alpha = drawer.progress }
+            // Its own insets: with the two layers moving independently the frame can no longer
+            // pad for both at once.
+            .windowInsetsPadding(WindowInsets.safeDrawing),
     ) {
         Column(
             modifier = Modifier
@@ -349,18 +440,14 @@ private fun BoxScope.MenuDrawer(drawer: DrawerState, entries: List<MenuEntry>) {
                 .verticalScroll(rememberScrollState())
                 .padding(vertical = 8.dp),
         ) {
-            Row(
-                modifier = Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 8.dp),
-                verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.SpaceBetween,
-            ) {
-                Text(text = "Меню", style = AppTheme.Subtitle, color = AppTheme.Foreground)
-                IconButton(onClick = { drawer.close() }, label = "Закрыть меню") { tint ->
-                    CloseIcon(tint)
-                }
-            }
-            Spacer(Modifier.height(4.dp))
-            Divider()
+            // No close button: the pushed-aside screen is always on show and always dismisses on
+            // tap, so a second way out would only crowd the header.
+            Text(
+                text = "Меню",
+                style = AppTheme.Title,
+                color = AppTheme.Foreground,
+                modifier = Modifier.padding(horizontal = 20.dp, vertical = 12.dp),
+            )
             Spacer(Modifier.height(8.dp))
 
             entries.forEach { entry ->
@@ -422,47 +509,6 @@ private fun MenuRow(entry: MenuEntry, onDismiss: () -> Unit) {
             .padding(horizontal = 12.dp, vertical = 14.dp),
     )
 }
-
-/**
- * Dims and blocks the content behind the drawer; tapping it closes the menu, and dragging it
- * pushes the panel back so the gesture can be finished without the finger ever finding the panel.
- *
- * Its alpha is tied to the drawer's travel, so the dimming arrives and leaves with the finger
- * rather than on a timer of its own.
- */
-@Composable
-private fun BoxScope.Scrim(drawer: DrawerState) {
-    val open = drawer.progress > 0f
-    Box(
-        modifier = Modifier
-            .matchParentSize()
-            .then(
-                // Composed only once there is something to dim: a full-screen box that is
-                // transparent but still clickable would eat every tap on the closed app.
-                if (open) {
-                    Modifier
-                        .background(ScrimColor.copy(alpha = ScrimColor.alpha * drawer.progress))
-                        // No ripple and no role: this is a dismissal surface, not a button, and
-                        // it should not announce itself as one.
-                        .clickable(
-                            interactionSource = remember { MutableInteractionSource() },
-                            indication = null,
-                            onClick = { drawer.close() },
-                        )
-                        .draggable(
-                            orientation = Orientation.Horizontal,
-                            state = rememberDraggableState { delta -> drawer.drag(delta) },
-                            onDragStarted = { drawer.onDragStarted() },
-                            onDragStopped = { velocity -> drawer.settle(velocity) },
-                        )
-                } else {
-                    Modifier
-                },
-            ),
-    )
-}
-
-private val ScrimColor = Color(0x66000000)
 
 /** A 44.dp round tap target — the platform minimum — wrapping a hand-drawn glyph. */
 @Composable

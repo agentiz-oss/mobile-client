@@ -21,6 +21,13 @@ object AppTheme {
     val Muted: Color = Color(0xFF71717A)
     val Border: Color = Color(0xFFE4E4E7)
     val Surface: Color = Color(0xFFFAFAFA)
+
+    /**
+     * The backdrop the slide-out menu sits on. A touch darker than [Surface] so the white screen
+     * pushed on top of it reads as a card lifted off the page, and so the rounded corners of that
+     * card have something to show against.
+     */
+    val MenuBackground: Color = Color(0xFFF4F4F5)
     val Danger: Color = Color(0xFFDC2626)
     val Disabled: Color = Color(0xFFA1A1AA)
 
