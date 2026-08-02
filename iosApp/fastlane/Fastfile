@@ -127,7 +127,10 @@ platform :ios do
       output_directory: output_dir,
       output_name: "#{scheme}.ipa",
       buildlog_path: File.join(output_dir, "logs"),
-      clean: true,
+      # A CI runner starts from an empty DerivedData, so cleaning only discards
+      # the Kotlin framework the pre-build step just produced. Set IOS_CLEAN_BUILD
+      # to force a clean archive locally or when debugging a stale-build issue.
+      clean: ENV.fetch("IOS_CLEAN_BUILD", "false") == "true",
       skip_profile_detection: true,
       codesigning_identity: signing_identity,
       xcargs: build_settings.join(" "),

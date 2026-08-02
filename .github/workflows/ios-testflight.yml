@@ -229,12 +229,29 @@ jobs:
           echo "Provisioning Profile UUID: $PP_UUID"
           echo "Provisioning Profile Name: $PP_NAME"
 
+      - name: Restore Kotlin/Native build output
+        # setup-gradle caches ~/.gradle but not the project's own build
+        # directories, where Kotlin/Native keeps its incremental state and the
+        # linked framework. Without this every run relinks from scratch, which
+        # is the single most expensive task in the job.
+        id: build-output-cache
+        uses: actions/cache/restore@v4
+        with:
+          path: |
+            composeApp/build
+            .gradle
+          key: kn-build-${{ runner.os }}-${{ hashFiles('gradle/libs.versions.toml', 'composeApp/build.gradle.kts', 'settings.gradle.kts', 'gradle.properties') }}-${{ github.sha }}
+          restore-keys: |
+            kn-build-${{ runner.os }}-${{ hashFiles('gradle/libs.versions.toml', 'composeApp/build.gradle.kts', 'settings.gradle.kts', 'gradle.properties') }}-
+            kn-build-${{ runner.os }}-
+
       - name: Pre-build Kotlin framework
         # Not strictly required (the Xcode build phase runs Gradle itself), but
         # Kotlin compile errors are far easier to read outside the xcodebuild log.
         # The daemon is kept alive on purpose: the Xcode build phase invokes
         # Gradle again and reuses this warmed-up process instead of starting a
-        # second JVM from scratch.
+        # second JVM from scratch — with the build output restored above that
+        # second invocation is up-to-date and returns immediately.
         run: ./gradlew :composeApp:linkReleaseFrameworkIosArm64 --build-cache
 
       - name: Save Kotlin/Native (Konan) toolchain
@@ -245,6 +262,17 @@ jobs:
         with:
           path: ~/.konan
           key: ${{ steps.konan-cache.outputs.cache-primary-key }}
+
+      - name: Save Kotlin/Native build output
+        # The key embeds github.sha, so this always writes a fresh entry that
+        # the next run picks up through its restore-keys prefix.
+        if: github.ref == 'refs/heads/main'
+        uses: actions/cache/save@v4
+        with:
+          path: |
+            composeApp/build
+            .gradle
+          key: ${{ steps.build-output-cache.outputs.cache-primary-key }}
 
       - name: Build and deploy to TestFlight
         working-directory: ${{ env.IOS_DIRECTORY }}
@@ -261,7 +289,11 @@ jobs:
           BUILD_NUMBER: ${{ github.run_number }}
           IOS_MARKETING_VERSION: ${{ vars.IOS_MARKETING_VERSION }}
           IOS_TESTFLIGHT_GROUPS: ${{ vars.IOS_TESTFLIGHT_GROUPS }}
-          IOS_SKIP_WAITING_FOR_BUILD_PROCESSING: ${{ github.event.inputs.skip_waiting_for_build_processing || 'false' }}
+          # Waiting on Apple's processing queue adds minutes of pure idling to
+          # every push and changes nothing about the uploaded binary. Manual
+          # runs can still opt in via the workflow_dispatch input, which is
+          # what group assignment and the changelog need.
+          IOS_SKIP_WAITING_FOR_BUILD_PROCESSING: ${{ github.event.inputs.skip_waiting_for_build_processing || 'true' }}
           IOS_CHANGELOG: "Build ${{ github.run_number }} from ${{ github.ref_name }} (${{ github.sha }})"
           APP_STORE_CONNECT_API_KEY_ID: ${{ secrets.APP_STORE_CONNECT_API_KEY_ID }}
           APP_STORE_CONNECT_ISSUER_ID: ${{ secrets.APP_STORE_CONNECT_ISSUER_ID }}
