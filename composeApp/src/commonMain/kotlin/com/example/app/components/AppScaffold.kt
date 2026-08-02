@@ -50,6 +50,7 @@ import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.dp
 import com.composeunstyled.Text
 import com.example.app.BuildInfo
+import com.example.app.platform.hapticActionComplete
 import com.example.app.theme.AppTheme
 import kotlin.math.roundToInt
 import kotlinx.coroutines.Job
@@ -156,12 +157,20 @@ private class DrawerState(
         // Width comes from density, so it is only ever zero in a degenerate composition; guarded
         // rather than assumed so an open() there cannot strand the panel at a nonsense offset.
         if (width <= 0f && target != 0f) return
+        // Already there — a burger tap on an open drawer, or a settle that picks the end the panel
+        // is resting on. Animating zero distance would still fire a tick for a panel that never
+        // moved, so leave without one.
+        if (offsetPx == target) return
         settleJob = scope.launch {
             animate(
                 initialValue = offsetPx,
                 targetValue = target,
                 animationSpec = tween(if (target > offsetPx) 220 else 180),
             ) { value, _ -> offsetPx = value }
+            // Only on a run that reached its target: a gesture grabbing the panel mid-slide cancels
+            // this coroutine, and the throw skips the tick. That is what makes the haptic mean "the
+            // drawer has settled" rather than "an animation stopped existing".
+            hapticActionComplete()
         }
     }
 
@@ -185,12 +194,20 @@ private class DrawerState(
      * otherwise it settles to whichever end it is nearer.
      */
     fun settle(velocity: Float) {
-        when {
-            velocity > FlingVelocity -> open()
-            velocity < -FlingVelocity -> close()
-            progress > 0.5f -> open()
-            else -> close()
+        val target = when {
+            velocity > FlingVelocity -> width
+            velocity < -FlingVelocity -> 0f
+            progress > 0.5f -> width
+            else -> 0f
         }
+        // A finger that carried the panel the whole way and let go on the end stop has nothing left
+        // to animate, so animateTo returns without a tick — but the drawer did just come to rest at
+        // an end, which is exactly what the haptic marks. Fire it here instead.
+        if (offsetPx == target) {
+            hapticActionComplete()
+            return
+        }
+        animateTo(target)
     }
 }
 

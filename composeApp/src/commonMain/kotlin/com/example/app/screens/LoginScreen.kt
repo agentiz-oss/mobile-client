@@ -33,6 +33,7 @@ import com.example.app.data.ApiException
 import com.example.app.data.Session
 import com.example.app.data.platformDefaultBaseUrl
 import com.example.app.theme.AppTheme
+import com.example.app.platform.hapticActionComplete
 import kotlinx.coroutines.launch
 
 /**
@@ -58,6 +59,7 @@ fun LoginScreen(onLoggedIn: (Session) -> Unit) {
             val api = AgentizApi(server.trim())
             try {
                 val result = api.login(login.trim(), password)
+                hapticActionComplete()
                 onLoggedIn(Session(serverUrl = server.trim(), token = result.token, user = result.user))
             } catch (e: ApiException) {
                 error = e.message
