@@ -73,7 +73,7 @@ private val EdgeSwipeWidth = 24.dp
  * measured one: the menu is not composed while the drawer is closed, so the first frame of an edge
  * swipe needs a travel distance that already exists.
  */
-private val DrawerWidth = 280.dp
+internal val DrawerWidth = 280.dp
 
 /**
  * How far the pushed-back screen shrinks, which is what makes it read as a card lifted off the
