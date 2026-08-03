@@ -3,17 +3,13 @@ package com.example.app.components
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.viewinterop.UIKitView
-import kotlinx.cinterop.ExperimentalForeignApi
-import platform.CoreGraphics.CGAffineTransformMakeTranslation
 import platform.Foundation.NSURL
 import platform.Foundation.NSURLRequest
 import platform.WebKit.WKWebView
 
 @Composable
-@OptIn(ExperimentalForeignApi::class)
 actual fun EmbeddedDashboard(url: String, modifier: Modifier) {
-    val drawerProgress = LocalDrawerProgress.current
-    val drawerOpen = drawerProgress > 0f
+    val drawerOpen = LocalDrawerProgress.current > 0f
     UIKitView(
         modifier = modifier,
         factory = {
@@ -22,12 +18,9 @@ actual fun EmbeddedDashboard(url: String, modifier: Modifier) {
             }
         },
         update = { webView ->
-            // WKWebView is a UIKit layer and therefore does not inherit Compose's graphicsLayer.
-            // A dp maps to a UIKit point here, so shift it by the same logical drawer width.
-            webView.transform = CGAffineTransformMakeTranslation(
-                (DrawerWidth.value * drawerProgress).toDouble(),
-                0.0,
-            )
+            // WKWebView is placed in a native UIKit layer, above Compose's graphicsLayer. Hiding
+            // it also prevents invisible content from receiving taps intended for the menu.
+            webView.alpha = if (drawerOpen) 0.0 else 1.0
             webView.userInteractionEnabled = !drawerOpen
         },
     )

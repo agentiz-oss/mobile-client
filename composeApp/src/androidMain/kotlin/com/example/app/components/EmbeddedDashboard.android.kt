@@ -5,15 +5,12 @@ import android.webkit.WebView
 import android.webkit.WebViewClient
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.viewinterop.AndroidView
 
 @SuppressLint("SetJavaScriptEnabled")
 @Composable
 actual fun EmbeddedDashboard(url: String, modifier: Modifier) {
-    val drawerProgress = LocalDrawerProgress.current
-    val drawerOpen = drawerProgress > 0f
-    val drawerOffset = with(LocalDensity.current) { DrawerWidth.toPx() * drawerProgress }
+    val drawerOpen = LocalDrawerProgress.current > 0f
     AndroidView(
         modifier = modifier,
         factory = { context ->
@@ -25,9 +22,9 @@ actual fun EmbeddedDashboard(url: String, modifier: Modifier) {
             }
         },
         update = { webView ->
-            // AndroidView has its own render node and does not inherit the sheet's graphicsLayer.
-            // Move that node with the card instead of hiding the dashboard.
-            webView.translationX = drawerOffset
+            // Keep behaviour consistent with platforms where the native view cannot inherit the
+            // drawer's Compose transform.
+            webView.visibility = if (drawerOpen) android.view.View.INVISIBLE else android.view.View.VISIBLE
             webView.isEnabled = !drawerOpen
         },
     )
