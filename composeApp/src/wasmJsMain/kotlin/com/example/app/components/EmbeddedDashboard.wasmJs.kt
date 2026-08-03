@@ -30,10 +30,10 @@ private fun appendDashboardFrame(url: String) {
             frame.id = 'agentiz-dashboard-frame';
             frame.src = url;
             frame.title = 'Диалог с агентом';
-            // Pin the frame to the bottom instead of deriving its height from `vh`: mobile
-            // browsers change the visual viewport when their URL bar appears, which otherwise
-            // leaves a white strip below the dashboard.
-            frame.style.cssText = 'position:fixed;top:64px;right:0;bottom:0;left:0;border:0;background:white;z-index:2';
+            // Size from the fixed-position containing viewport instead of `vh`: mobile browsers
+            // change their visual viewport when the URL bar appears, which otherwise leaves a
+            // white strip below the dashboard.
+            frame.style.cssText = 'position:fixed;top:64px;left:0;width:100%;height:calc(100% - 64px);border:0;background:white;z-index:2';
             document.body.appendChild(frame);
         })()
     """)
