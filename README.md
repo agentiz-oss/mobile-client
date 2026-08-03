@@ -4,8 +4,8 @@ A Kotlin Multiplatform / Compose Multiplatform client for the Agentiz server. On
 codebase renders the same UI on **web (Wasm)**, **desktop (JVM)**, **Android** and **iOS**.
 
 What the app does: sign in against the Agentiz mobile API, browse your projects, open a project's
-tasks, create a task, run its pipeline, and read the run result, the execution log and the
-discussion thread.
+tasks, create a task, run or stop its pipeline, browse the history of all runs with their results
+and execution logs, and read the discussion thread.
 
 ---
 

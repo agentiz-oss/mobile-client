@@ -143,6 +143,22 @@ class MenuDrawerTest {
 
     @OptIn(ExperimentalTestApi::class)
     @Test
+    fun agentMenuItemOpensTheDashboardBottomSheet() = runComposeUiTest {
+        signIn()
+        setContent { App() }
+        waitForIdle()
+
+        onNodeWithContentDescription("Открыть меню").performClick()
+        waitForIdle()
+        onNodeWithText("Агент").performClick()
+        waitForIdle()
+
+        onNodeWithText("Диалог с агентом").assertIsDisplayed()
+        onNodeWithText("Меню").assertDoesNotExist()
+    }
+
+    @OptIn(ExperimentalTestApi::class)
+    @Test
     fun backFromSettingsReturnsToTheScreenItWasOpenedFrom() = runComposeUiTest {
         signIn()
         setContent { App() }

@@ -2,6 +2,7 @@ package com.example.app.screens
 
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -25,6 +26,7 @@ import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
 import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.unit.dp
 import com.composeunstyled.Text
@@ -47,6 +49,7 @@ import kotlinx.coroutines.launch
 
 /** Pipeline states that mean the worker is still holding the task. */
 private val ACTIVE_TASK_STATES = setOf("queued", "running")
+private val ACTIVE_RUN_STATES = setOf("pending", "running")
 
 /**
  * One task: what it is, what its last pipeline run concluded, and the discussion around it.
@@ -69,6 +72,10 @@ fun TaskDetailScreen(
     val scope = rememberCoroutineScope()
 
     var detail by remember { mutableStateOf<TaskDetailDto?>(null) }
+    var runs by remember { mutableStateOf<List<RunDto>?>(null) }
+    var selectedRun by remember { mutableStateOf<RunDto?>(null) }
+    var loadingRunId by remember { mutableStateOf<String?>(null) }
+    var cancellingRunId by remember { mutableStateOf<String?>(null) }
     var error by remember { mutableStateOf<String?>(null) }
     var reloadKey by remember { mutableStateOf(0) }
     var busy by remember { mutableStateOf(false) }
@@ -77,6 +84,16 @@ fun TaskDetailScreen(
     suspend fun load() {
         try {
             detail = api.task(session.token, taskId)
+            runs = api.runs(session.token, taskId)
+            selectedRun = selectedRun?.let { selected ->
+                // The task response already contains a live, full trace for its latest run.
+                // For an older run retain the detail that was explicitly loaded instead of
+                // replacing its stages/logs with the compact history row on every poll.
+                detail?.latestRun?.takeIf { it.id == selected.id } ?: selected
+            }
+            if (cancellingRunId != null && runs?.firstOrNull { it.id == cancellingRunId }?.status !in ACTIVE_RUN_STATES) {
+                cancellingRunId = null
+            }
             error = null
         } catch (e: ApiException) {
             error = e.message
@@ -88,7 +105,7 @@ fun TaskDetailScreen(
     LaunchedEffect(taskId, reloadKey) { load() }
 
     // Poll only while something is actually in flight; a finished task costs no requests.
-    val active = detail?.task?.status in ACTIVE_TASK_STATES
+    val active = detail?.latestRun?.status in ACTIVE_RUN_STATES || detail?.task?.status in ACTIVE_TASK_STATES
     LaunchedEffect(taskId, active) {
         while (active) {
             delay(2000)
@@ -131,6 +148,45 @@ fun TaskDetailScreen(
         }
     }
 
+    fun cancelPipeline() {
+        val run = currentRun(detail, runs) ?: return
+        if (busy || run.status !in ACTIVE_RUN_STATES) return
+        busy = true
+        cancellingRunId = run.id
+        scope.launch {
+            try {
+                api.cancelRun(session.token, taskId, run.id)
+                load()
+            } catch (e: ApiException) {
+                error = e.message
+                cancellingRunId = null
+            } catch (e: Throwable) {
+                error = "Ошибка сети: ${e.message ?: "неизвестная ошибка"}"
+                cancellingRunId = null
+            } finally {
+                busy = false
+            }
+        }
+    }
+
+    fun openRun(run: RunDto) {
+        if (loadingRunId != null) return
+        selectedRun = run
+        loadingRunId = run.id
+        scope.launch {
+            try {
+                selectedRun = api.run(session.token, taskId, run.id)
+                error = null
+            } catch (e: ApiException) {
+                error = e.message
+            } catch (e: Throwable) {
+                error = "Ошибка сети: ${e.message ?: "неизвестная ошибка"}"
+            } finally {
+                loadingRunId = null
+            }
+        }
+    }
+
     val current = detail
     AppScaffold(
         title = current?.task?.title ?: "Задача",
@@ -169,9 +225,30 @@ fun TaskDetailScreen(
                     modifier = Modifier.fillMaxWidth(),
                 )
 
-                if (current.latestRun != null) {
+                val activeRun = currentRun(current, runs)
+                if (activeRun != null && activeRun.status in ACTIVE_RUN_STATES) {
+                    Spacer(Modifier.height(12.dp))
+                    val cancelling = activeRun.id == cancellingRunId
+                    AppButton(
+                        text = when {
+                            busy -> "…"
+                            cancelling -> "Остановка запрошена…"
+                            else -> "Остановить запуск"
+                        },
+                        onClick = ::cancelPipeline,
+                        enabled = !busy && !cancelling,
+                        modifier = Modifier.fillMaxWidth(),
+                    )
+                }
+
+                if (!runs.isNullOrEmpty()) {
                     Spacer(Modifier.height(20.dp))
-                    RunResult(current.latestRun)
+                    RunHistory(
+                        runs = runs!!,
+                        selectedRun = selectedRun ?: current.latestRun,
+                        loadingRunId = loadingRunId,
+                        onOpenRun = ::openRun,
+                    )
                 }
 
                 Spacer(Modifier.height(24.dp))
@@ -209,6 +286,9 @@ fun TaskDetailScreen(
     }
 }
 
+private fun currentRun(detail: TaskDetailDto?, runs: List<RunDto>?): RunDto? =
+    runs?.firstOrNull { it.status in ACTIVE_RUN_STATES } ?: detail?.latestRun
+
 @Composable
 private fun TaskSummary(task: TaskDto) {
     Column(
@@ -239,6 +319,61 @@ private fun TaskSummary(task: TaskDto) {
             Spacer(Modifier.height(12.dp))
             Text(text = task.tags.joinToString(" · "), style = AppTheme.Label, color = AppTheme.Muted)
         }
+    }
+}
+
+@Composable
+private fun RunHistory(
+    runs: List<RunDto>,
+    selectedRun: RunDto?,
+    loadingRunId: String?,
+    onOpenRun: (RunDto) -> Unit,
+) {
+    SectionTitle("Запуски")
+    Spacer(Modifier.height(12.dp))
+    Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+        runs.forEachIndexed { index, run ->
+            RunHistoryRow(
+                run = run,
+                number = runs.size - index,
+                selected = run.id == selectedRun?.id,
+                loading = run.id == loadingRunId,
+                onClick = { onOpenRun(run) },
+            )
+        }
+    }
+    if (selectedRun != null) {
+        Spacer(Modifier.height(16.dp))
+        RunResult(selectedRun)
+    }
+}
+
+@Composable
+private fun RunHistoryRow(run: RunDto, number: Int, selected: Boolean, loading: Boolean, onClick: () -> Unit) {
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .clip(RoundedCornerShape(AppTheme.Radius))
+            .clickable(onClick = onClick)
+            .border(
+                if (selected) 2.dp else 1.dp,
+                if (selected) AppTheme.Primary else AppTheme.Border,
+                RoundedCornerShape(AppTheme.Radius),
+            )
+            .background(AppTheme.Surface, RoundedCornerShape(AppTheme.Radius))
+            .padding(14.dp),
+        horizontalArrangement = Arrangement.SpaceBetween,
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Column(modifier = Modifier.weight(1f)) {
+            Text(text = "Запуск #$number", style = AppTheme.Label, color = AppTheme.Foreground)
+            val summary = run.resultSummary?.takeIf { it.isNotBlank() }
+            if (summary != null) {
+                Text(text = summary, style = AppTheme.Label, color = AppTheme.Muted, maxLines = 1)
+            }
+        }
+        if (loading) Text(text = "…", style = AppTheme.Label, color = AppTheme.Muted)
+        else RunStatusBadge(run.status)
     }
 }
 

@@ -5,7 +5,11 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.ui.Modifier
 import com.example.app.components.MenuEntry
+import com.example.app.components.AgentDashboardSheet
 import com.example.app.data.ProjectDto
 import com.example.app.data.Session
 import com.example.app.data.clearSession
@@ -66,6 +70,7 @@ fun App() {
     // very first frame is already the right screen, with no login flash before it.
     var session by remember { mutableStateOf(loadSession()) }
     var destination by remember { mutableStateOf<Destination>(Destination.Projects) }
+    var agentSheetVisible by remember { mutableStateOf(false) }
 
     fun logout() {
         clearSession()
@@ -110,6 +115,12 @@ fun App() {
                 ),
             )
         }
+        add(
+            MenuEntry(
+                label = "Агент",
+                onClick = { agentSheetVisible = true },
+            ),
+        )
         // No "Выйти" here any more: signing out lives on the profile page behind the drawer's
         // person icon, where a mis-tap while flicking through the menu cannot reach it.
     }
@@ -121,7 +132,8 @@ fun App() {
     val openSettings = { destination = Destination.Settings(destination) }
     val openProfile = { destination = Destination.Profile(destination) }
 
-    when (val where = destination) {
+    Box(modifier = Modifier.fillMaxSize()) {
+        when (val where = destination) {
         is Destination.Projects -> ProjectsScreen(
             session = current,
             menu = menu,
@@ -168,5 +180,13 @@ fun App() {
             onOpenSettings = { destination = Destination.Settings(where.from) },
             onOpenProfile = {},
         )
+        }
+
+        if (agentSheetVisible) {
+            AgentDashboardSheet(
+                dashboardUrl = current.serverUrl.trimEnd('/') + "/dashboard",
+                onDismiss = { agentSheetVisible = false },
+            )
+        }
     }
 }

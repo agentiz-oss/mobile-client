@@ -135,6 +135,12 @@ data class CommentResponse(val data: CommentDto)
 @Serializable
 data class RunRefResponse(val data: RunRefDto)
 
+@Serializable
+data class RunsResponse(val data: List<RunDto> = emptyList())
+
+@Serializable
+data class RunResponse(val data: RunDto)
+
 /** Body of POST /projects/{id}/tasks. */
 @Serializable
 data class CreateTaskRequest(

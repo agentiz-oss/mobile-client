@@ -84,6 +84,24 @@ class AgentizApi(baseUrl: String = platformDefaultBaseUrl()) {
             bearerAuth(token)
         }.decodeOrThrow<RunRefResponse>().data
 
+    /** Compact run history, newest first. Use [run] to load a run's trace. */
+    suspend fun runs(token: String, taskId: String): List<RunDto> =
+        client.get("$root/tasks/$taskId/runs") {
+            bearerAuth(token)
+        }.decodeOrThrow<RunsResponse>().data
+
+    /** Full result, stages and log of one historical run. */
+    suspend fun run(token: String, taskId: String, runId: String): RunDto =
+        client.get("$root/tasks/$taskId/runs/$runId") {
+            bearerAuth(token)
+        }.decodeOrThrow<RunResponse>().data
+
+    /** Requests cancellation of a queued or running run. */
+    suspend fun cancelRun(token: String, taskId: String, runId: String): RunDto =
+        client.post("$root/tasks/$taskId/runs/$runId/cancel") {
+            bearerAuth(token)
+        }.decodeOrThrow<RunResponse>().data
+
     suspend fun addComment(token: String, taskId: String, body: String): CommentDto =
         client.post("$root/tasks/$taskId/comments") {
             bearerAuth(token)
