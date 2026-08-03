@@ -29,6 +29,7 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.SideEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableFloatStateOf
@@ -249,16 +250,21 @@ fun AppScaffold(
         )
 
         ContentSheet(drawer = drawer) {
-            Column(modifier = Modifier.fillMaxSize()) {
-                TopBar(
-                    title = title,
-                    subtitle = subtitle,
-                    onBack = onBack,
-                    onOpenMenu = { drawer.open() },
-                )
-                // weight, not fillMaxSize: the content takes the height the bar leaves rather than
-                // the whole frame, which keeps a scrolling list from running under the bar.
-                Box(modifier = Modifier.fillMaxWidth().weight(1f)) { content() }
+            // Native and DOM WebViews are separate platform layers and cannot inherit the card's
+            // graphicsLayer transform. Give them the drawer state so they can be hidden before
+            // they obscure the menu.
+            CompositionLocalProvider(LocalDrawerProgress provides drawer.progress) {
+                Column(modifier = Modifier.fillMaxSize()) {
+                    TopBar(
+                        title = title,
+                        subtitle = subtitle,
+                        onBack = onBack,
+                        onOpenMenu = { drawer.open() },
+                    )
+                    // weight, not fillMaxSize: the content takes the height the bar leaves rather than
+                    // the whole frame, which keeps a scrolling list from running under the bar.
+                    Box(modifier = Modifier.fillMaxWidth().weight(1f)) { content() }
+                }
             }
         }
 

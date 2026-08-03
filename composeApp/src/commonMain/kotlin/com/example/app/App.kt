@@ -4,19 +4,15 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
-import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
-import androidx.compose.foundation.layout.Box
-import androidx.compose.foundation.layout.fillMaxSize
-import androidx.compose.ui.Modifier
 import com.example.app.components.MenuEntry
-import com.example.app.components.AgentDashboardSheet
 import com.example.app.data.ProjectDto
 import com.example.app.data.Session
 import com.example.app.data.clearSession
 import com.example.app.data.loadSession
 import com.example.app.data.saveSession
 import com.example.app.screens.LoginScreen
+import com.example.app.screens.AgentDashboardScreen
 import com.example.app.screens.ProfileScreen
 import com.example.app.screens.ProjectsScreen
 import com.example.app.screens.SettingsScreen
@@ -32,6 +28,7 @@ private sealed interface Destination {
     data object Projects : Destination
     data class Tasks(val project: ProjectDto) : Destination
     data class Task(val project: ProjectDto, val taskId: String) : Destination
+    data class Agent(val from: Destination) : Destination
 
     /**
      * The two pages behind the drawer's footer icons. Each carries where it was opened from so
@@ -53,6 +50,7 @@ private fun Destination.project(): ProjectDto? = when (this) {
     is Destination.Projects -> null
     is Destination.Tasks -> project
     is Destination.Task -> project
+    is Destination.Agent -> from.project()
     is Destination.Settings -> from.project()
     is Destination.Profile -> from.project()
 }
@@ -71,7 +69,6 @@ fun App() {
     // very first frame is already the right screen, with no login flash before it.
     var session by remember { mutableStateOf(loadSession()) }
     var destination by remember { mutableStateOf<Destination>(Destination.Projects) }
-    var agentSheetVisible by remember { mutableStateOf(false) }
 
     fun logout() {
         clearSession()
@@ -90,7 +87,7 @@ fun App() {
     }
 
     fun openAgent() {
-        agentSheetVisible = true
+        destination = Destination.Agent(destination)
     }
 
     /**
@@ -124,6 +121,7 @@ fun App() {
             MenuEntry(
                 label = "Агент",
                 onClick = ::openAgent,
+                enabled = destination !is Destination.Agent,
             ),
         )
         // No "Выйти" here any more: signing out lives on the profile page behind the drawer's
@@ -137,8 +135,7 @@ fun App() {
     val openSettings = { destination = Destination.Settings(destination) }
     val openProfile = { destination = Destination.Profile(destination) }
 
-    Box(modifier = Modifier.fillMaxSize()) {
-        when (val where = destination) {
+    when (val where = destination) {
         is Destination.Projects -> ProjectsScreen(
             session = current,
             menu = menu,
@@ -167,6 +164,14 @@ fun App() {
             onOpenProfile = openProfile,
         )
 
+        is Destination.Agent -> AgentDashboardScreen(
+            session = current,
+            menu = menu,
+            onBack = { destination = where.from },
+            onOpenSettings = { destination = Destination.Settings(where) },
+            onOpenProfile = { destination = Destination.Profile(where) },
+        )
+
         // The footer icon for the page you are already on is left inert rather than pushing a
         // second copy of it — tapping "Настройки" from settings should do nothing, not deepen the
         // back stack by one indistinguishable screen.
@@ -185,15 +190,5 @@ fun App() {
             onOpenSettings = { destination = Destination.Settings(where.from) },
             onOpenProfile = {},
         )
-        }
-
-        if (agentSheetVisible) {
-            AgentDashboardSheet(
-                dashboardUrl = current.serverUrl.trimEnd('/') + "/dashboard/mobile-assistant",
-                onDismiss = {
-                    agentSheetVisible = false
-                },
-            )
-        }
     }
 }

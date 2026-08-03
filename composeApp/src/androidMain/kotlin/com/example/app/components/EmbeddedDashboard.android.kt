@@ -10,6 +10,7 @@ import androidx.compose.ui.viewinterop.AndroidView
 @SuppressLint("SetJavaScriptEnabled")
 @Composable
 actual fun EmbeddedDashboard(url: String, modifier: Modifier) {
+    val drawerOpen = LocalDrawerProgress.current > 0f
     AndroidView(
         modifier = modifier,
         factory = { context ->
@@ -19,6 +20,12 @@ actual fun EmbeddedDashboard(url: String, modifier: Modifier) {
                 webViewClient = WebViewClient()
                 loadUrl(url)
             }
+        },
+        update = { webView ->
+            // Keep behaviour consistent with platforms where the native view cannot inherit the
+            // drawer's Compose transform.
+            webView.visibility = if (drawerOpen) android.view.View.INVISIBLE else android.view.View.VISIBLE
+            webView.isEnabled = !drawerOpen
         },
     )
 }

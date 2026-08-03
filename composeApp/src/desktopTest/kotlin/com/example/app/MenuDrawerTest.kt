@@ -143,7 +143,7 @@ class MenuDrawerTest {
 
     @OptIn(ExperimentalTestApi::class)
     @Test
-    fun agentMenuItemOpensTheDashboardBottomSheet() = runComposeUiTest {
+    fun agentMenuItemOpensTheDashboardScreen() = runComposeUiTest {
         signIn()
         setContent { App() }
         waitForIdle()
@@ -155,6 +155,7 @@ class MenuDrawerTest {
 
         onNodeWithText("Диалог с агентом").assertIsDisplayed()
         onNodeWithText("Меню").assertDoesNotExist()
+        onNodeWithContentDescription("Назад").assertIsDisplayed()
     }
 
     @OptIn(ExperimentalTestApi::class)

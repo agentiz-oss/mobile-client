@@ -9,11 +9,19 @@ import platform.WebKit.WKWebView
 
 @Composable
 actual fun EmbeddedDashboard(url: String, modifier: Modifier) {
+    val drawerOpen = LocalDrawerProgress.current > 0f
     UIKitView(
         modifier = modifier,
-        factory = { WKWebView() },
+        factory = {
+            WKWebView().apply {
+                NSURL.URLWithString(url)?.let { loadRequest(NSURLRequest(it)) }
+            }
+        },
         update = { webView ->
-            NSURL.URLWithString(url)?.let { webView.loadRequest(NSURLRequest(it)) }
+            // WKWebView is placed in a native UIKit layer, above Compose's graphicsLayer. Hiding
+            // it also prevents invisible content from receiving taps intended for the menu.
+            webView.alpha = if (drawerOpen) 0.0 else 1.0
+            webView.userInteractionEnabled = !drawerOpen
         },
     )
 }
