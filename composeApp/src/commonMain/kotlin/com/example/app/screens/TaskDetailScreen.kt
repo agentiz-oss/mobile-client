@@ -46,10 +46,12 @@ import com.example.app.data.TaskDto
 import com.example.app.theme.AppTheme
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
+import kotlinx.serialization.json.Json
 
 /** Pipeline states that mean the worker is still holding the task. */
 private val ACTIVE_TASK_STATES = setOf("queued", "running")
 private val ACTIVE_RUN_STATES = setOf("pending", "running")
+private val prettyJson = Json { prettyPrint = true }
 
 /**
  * One task: what it is, what its last pipeline run concluded, and the discussion around it.
@@ -421,7 +423,28 @@ private fun RunResult(run: RunDto) {
         val summary = run.resultSummary?.takeIf { it.isNotBlank() }
         if (summary != null) {
             Spacer(Modifier.height(16.dp))
+            SectionTitle("Итог воркера")
+            Spacer(Modifier.height(8.dp))
             Text(text = summary, style = AppTheme.Body, color = AppTheme.Foreground)
+        }
+
+        run.workerResult?.let { result ->
+            Spacer(Modifier.height(16.dp))
+            SectionTitle("Полный ответ воркера")
+            Spacer(Modifier.height(8.dp))
+            // Worker result schemas may evolve independently. Display the complete JSON that the
+            // server persisted rather than silently dropping fields the client does not know yet.
+            SelectionContainer {
+                Text(
+                    text = prettyJson.encodeToString(result),
+                    style = AppTheme.Label,
+                    color = AppTheme.Foreground,
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .heightIn(max = 360.dp)
+                        .verticalScroll(rememberScrollState()),
+                )
+            }
         }
         val failure = run.errorMessage?.takeIf { it.isNotBlank() }
         if (failure != null) {

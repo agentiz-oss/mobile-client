@@ -4,6 +4,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.fillMaxSize
@@ -88,6 +89,10 @@ fun App() {
         return
     }
 
+    fun openAgent() {
+        agentSheetVisible = true
+    }
+
     /**
      * The drawer's contents. Built here rather than inside each screen because the menu is about
      * the session, not the page: it is the same list everywhere, with the entry for wherever you
@@ -118,7 +123,7 @@ fun App() {
         add(
             MenuEntry(
                 label = "Агент",
-                onClick = { agentSheetVisible = true },
+                onClick = ::openAgent,
             ),
         )
         // No "Выйти" here any more: signing out lives on the profile page behind the drawer's
@@ -184,8 +189,10 @@ fun App() {
 
         if (agentSheetVisible) {
             AgentDashboardSheet(
-                dashboardUrl = current.serverUrl.trimEnd('/') + "/dashboard",
-                onDismiss = { agentSheetVisible = false },
+                dashboardUrl = current.serverUrl.trimEnd('/') + "/dashboard/mobile-assistant",
+                onDismiss = {
+                    agentSheetVisible = false
+                },
             )
         }
     }

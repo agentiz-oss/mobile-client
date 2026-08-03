@@ -29,7 +29,10 @@ import com.example.app.theme.AppTheme
  */
 @Composable
 fun AgentDashboardSheet(
-    dashboardUrl: String,
+    webviewUrl: String?,
+    loading: Boolean,
+    error: String?,
+    onRetry: () -> Unit,
     onDismiss: () -> Unit,
 ) {
     Box(modifier = Modifier.fillMaxSize()) {
@@ -60,11 +63,30 @@ fun AgentDashboardSheet(
                     .background(AppTheme.Border),
             )
             Text(text = "Диалог с агентом", style = AppTheme.Subtitle, color = AppTheme.Foreground)
-            Text(text = "Админка Agentiz", style = AppTheme.Label, color = AppTheme.Muted)
-            EmbeddedDashboard(
-                url = dashboardUrl,
-                modifier = Modifier.fillMaxWidth().weight(1f),
-            )
+            when {
+                loading -> Box(
+                    modifier = Modifier.fillMaxWidth().weight(1f),
+                    contentAlignment = Alignment.Center,
+                ) {
+                    Text(text = "Подключаем агента…", style = AppTheme.Body, color = AppTheme.Muted)
+                }
+
+                error != null -> Column(
+                    modifier = Modifier.fillMaxWidth().weight(1f),
+                    horizontalAlignment = Alignment.CenterHorizontally,
+                    verticalArrangement = Arrangement.Center,
+                ) {
+                    Text(text = error, style = AppTheme.Body, color = AppTheme.Danger)
+                    AppButton(text = "Повторить", onClick = onRetry, modifier = Modifier.padding(top = 16.dp))
+                }
+
+                webviewUrl != null -> EmbeddedDashboard(
+                    // This one-use URL installs the HttpOnly dashboard session and redirects to
+                    // the dedicated assistant page. It is intentionally not the generic dashboard.
+                    url = webviewUrl,
+                    modifier = Modifier.fillMaxWidth().weight(1f),
+                )
+            }
         }
     }
 }

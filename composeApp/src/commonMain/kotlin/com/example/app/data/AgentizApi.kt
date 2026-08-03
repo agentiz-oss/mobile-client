@@ -44,6 +44,18 @@ class AgentizApi(baseUrl: String = platformDefaultBaseUrl()) {
             setBody(LoginRequest(login = login, password = password))
         }.decodeOrThrow()
 
+    /**
+     * Mints a short-lived, one-use WebView URL for the Agentiz Assistant.
+     *
+     * The mobile bearer token is used only for this exchange.  Loading the returned URL lets the
+     * server install its HttpOnly Adminizer session cookie, so neither the bearer nor a dashboard
+     * cookie is ever put into the WebView URL or exposed to page JavaScript.
+     */
+    suspend fun assistantWebviewSession(token: String): AssistantWebviewSessionDto =
+        client.post("$root/assistant/webview-session") {
+            bearerAuth(token)
+        }.decodeOrThrow()
+
     /** Projects owned by the token's user. */
     suspend fun projects(token: String): List<ProjectDto> =
         client.get("$root/projects") {

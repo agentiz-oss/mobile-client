@@ -112,6 +112,18 @@ Override it in the field to point at any reachable instance. The app talks to
 Sign in with an Adminizer admin login and password. On a fresh server no administrator exists yet —
 create the first one at `/dashboard/init_user`, then use those credentials here.
 
+### Assistant
+
+The **Агент** item opens the `agentiz-assistant` chat. The app first exchanges its mobile JWT at
+`POST /assistant/webview-session`; the server returns a one-use link, which the WebView exchanges
+for an HttpOnly dashboard-session cookie. The chat can therefore stream and send messages without
+ever receiving the mobile JWT. The account needs the server permission
+`ai-assistant-agentiz-assistant`.
+
+The server must include the `workerResult` field in `GET /tasks/:taskId/runs/:runId` for the app to
+render the complete persisted worker payload. The app renders it as selectable formatted JSON, in
+addition to the ordered execution log and result summary.
+
 **Web builds need CORS on the server.** The page is served from `:8081` while the API lives on
 another port, so every request is cross-origin. The Agentiz mobile API already enables a wildcard
 origin (bearer tokens, no cookies), so this works out of the box against a stock server.

@@ -1,6 +1,7 @@
 package com.example.app.data
 
 import kotlinx.serialization.Serializable
+import kotlinx.serialization.json.JsonElement
 
 /** Body of POST /auth/login. */
 @Serializable
@@ -89,6 +90,19 @@ data class RunDto(
     val finishedAt: String? = null,
     val stages: List<StageDto> = emptyList(),
     val logs: List<LogEntryDto> = emptyList(),
+    /**
+     * Immutable final payload accepted from the worker.  It can contain stage outputs, changed
+     * files and worker-specific diagnostic data, so keep it as JSON rather than losing fields in
+     * a prematurely narrow client DTO.
+     */
+    val workerResult: JsonElement? = null,
+)
+
+/** One-use bridge into the Adminizer Assistant WebView. */
+@Serializable
+data class AssistantWebviewSessionDto(
+    val url: String,
+    val expiresAt: String? = null,
 )
 
 /**
