@@ -32,6 +32,12 @@ object AppTheme {
     val Disabled: Color = Color(0xFFA1A1AA)
 
     /**
+     * Fill for a run's card in the history list — a pastel blue so faint it reads as a tint rather
+     * than a colour, just enough to set "запуск" cards apart from the neutral surfaces around them.
+     */
+    val RunCard: Color = Color(0xFFF2F7FE)
+
+    /**
      * The colour a focused control's border takes, and the halo drawn around it. Mirrors shadcn's
      * `focus-visible:ring-ring` — the ring is the same hue as the border it replaces, drawn at low
      * opacity so it reads as a glow rather than a second frame.

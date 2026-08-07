@@ -38,6 +38,7 @@ import com.example.app.components.MenuEntry
 import com.example.app.components.PullToRefresh
 import com.example.app.data.AgentizApi
 import com.example.app.data.ApiException
+import com.example.app.data.LocalStore
 import com.example.app.data.ProjectDto
 import com.example.app.data.Session
 import com.example.app.theme.AppTheme
@@ -58,9 +59,11 @@ fun ProjectsScreen(
     val api = remember(session.serverUrl) { AgentizApi(session.serverUrl) }
     DisposableEffect(api) { onDispose { api.close() } }
 
-    var projects by remember { mutableStateOf<List<ProjectDto>?>(null) }
+    // Seeded from the last successful load so a returning user sees their projects immediately;
+    // `loading` only ever gates the spinner for a screen that has nothing cached to show yet.
+    var projects by remember { mutableStateOf(LocalStore.loadProjects()) }
     var error by remember { mutableStateOf<String?>(null) }
-    var loading by remember { mutableStateOf(true) }
+    var loading by remember { mutableStateOf(projects == null) }
     var reloadKey by remember { mutableStateOf(0) }
 
     // A pull-to-refresh is tracked apart from `loading` so it replaces neither the list nor the
@@ -68,10 +71,12 @@ fun ProjectsScreen(
     var refreshing by remember { mutableStateOf(false) }
 
     LaunchedEffect(reloadKey) {
-        loading = true
+        loading = projects == null
         error = null
         try {
-            projects = api.projects(session.token)
+            val loaded = api.projects(session.token)
+            projects = loaded
+            LocalStore.saveProjects(loaded)
         } catch (e: ApiException) {
             error = e.message
         } catch (e: Throwable) {

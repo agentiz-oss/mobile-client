@@ -15,6 +15,7 @@ import com.example.app.screens.LoginScreen
 import com.example.app.screens.AgentDashboardScreen
 import com.example.app.screens.ProfileScreen
 import com.example.app.screens.ProjectsScreen
+import com.example.app.screens.RunDetailScreen
 import com.example.app.screens.SettingsScreen
 import com.example.app.screens.TaskDetailScreen
 import com.example.app.screens.TasksScreen
@@ -28,6 +29,13 @@ private sealed interface Destination {
     data object Projects : Destination
     data class Tasks(val project: ProjectDto) : Destination
     data class Task(val project: ProjectDto, val taskId: String) : Destination
+
+    /**
+     * One run's own page, opened from its card in the task's history. [runNumber] is only along
+     * for the title — the run itself is looked up by [runId] — so it is nullable for the sake of
+     * any future entry point that would not have it on hand.
+     */
+    data class Run(val project: ProjectDto, val taskId: String, val runId: String, val runNumber: Int?) : Destination
     data class Agent(val from: Destination) : Destination
 
     /**
@@ -50,6 +58,7 @@ private fun Destination.project(): ProjectDto? = when (this) {
     is Destination.Projects -> null
     is Destination.Tasks -> project
     is Destination.Task -> project
+    is Destination.Run -> project
     is Destination.Agent -> from.project()
     is Destination.Settings -> from.project()
     is Destination.Profile -> from.project()
@@ -160,6 +169,20 @@ fun App() {
             taskId = where.taskId,
             menu = menu,
             onBack = { destination = Destination.Tasks(where.project) },
+            onOpenSettings = openSettings,
+            onOpenProfile = openProfile,
+            onOpenRun = { run, number ->
+                destination = Destination.Run(where.project, where.taskId, run.id, number)
+            },
+        )
+
+        is Destination.Run -> RunDetailScreen(
+            session = current,
+            taskId = where.taskId,
+            runId = where.runId,
+            runNumber = where.runNumber,
+            menu = menu,
+            onBack = { destination = Destination.Task(where.project, where.taskId) },
             onOpenSettings = openSettings,
             onOpenProfile = openProfile,
         )

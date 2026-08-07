@@ -121,8 +121,9 @@ ever receiving the mobile JWT. The account needs the server permission
 `ai-assistant-agentiz-assistant`.
 
 The server must include the `workerResult` field in `GET /tasks/:taskId/runs/:runId` for the app to
-render the complete persisted worker payload. The app renders it as selectable formatted JSON, in
-addition to the ordered execution log and result summary.
+render the complete persisted worker payload. The app automatically loads that detailed endpoint
+for the newest run (and when a history entry is selected), then renders it as selectable formatted
+JSON alongside the ordered execution log and result summary.
 
 **Web builds need CORS on the server.** The page is served from `:8081` while the API lives on
 another port, so every request is cross-origin. The Agentiz mobile API already enables a wildcard

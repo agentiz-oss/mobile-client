@@ -63,6 +63,7 @@ data class StageDto(
     val role: String,
     val status: String,
     val summary: String? = null,
+    val output: JsonElement? = null,
     val errorMessage: String? = null,
 )
 

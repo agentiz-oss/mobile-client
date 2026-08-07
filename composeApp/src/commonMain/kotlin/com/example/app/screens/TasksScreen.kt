@@ -40,6 +40,7 @@ import com.example.app.components.MenuEntry
 import com.example.app.components.PullToRefresh
 import com.example.app.data.AgentizApi
 import com.example.app.data.ApiException
+import com.example.app.data.LocalStore
 import com.example.app.data.ProjectDto
 import com.example.app.data.Session
 import com.example.app.data.TaskDto
@@ -68,9 +69,10 @@ fun TasksScreen(
     DisposableEffect(api) { onDispose { api.close() } }
     val scope = rememberCoroutineScope()
 
-    var tasks by remember { mutableStateOf<List<TaskDto>?>(null) }
+    // Seeded from the last successful load for this project, same as the projects list above it.
+    var tasks by remember(project.id) { mutableStateOf(LocalStore.loadTasks(project.id)) }
     var error by remember { mutableStateOf<String?>(null) }
-    var loading by remember { mutableStateOf(true) }
+    var loading by remember { mutableStateOf(tasks == null) }
     var reloadKey by remember { mutableStateOf(0) }
 
     // A pull-to-refresh is tracked apart from `loading` so it replaces neither the list nor the
@@ -83,10 +85,12 @@ fun TasksScreen(
     var creating by remember { mutableStateOf(false) }
 
     LaunchedEffect(reloadKey) {
-        loading = true
+        loading = tasks == null
         error = null
         try {
-            tasks = api.tasks(session.token, project.id)
+            val loaded = api.tasks(session.token, project.id)
+            tasks = loaded
+            LocalStore.saveTasks(project.id, loaded)
         } catch (e: ApiException) {
             error = e.message
         } catch (e: Throwable) {

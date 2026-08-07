@@ -3,6 +3,7 @@ package com.example.app.screens
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -10,11 +11,12 @@ import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
-import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.relocation.BringIntoViewRequester
+import androidx.compose.foundation.relocation.bringIntoViewRequester
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.foundation.text.selection.SelectionContainer
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
@@ -37,21 +39,18 @@ import com.example.app.components.MenuEntry
 import com.example.app.data.AgentizApi
 import com.example.app.data.ApiException
 import com.example.app.data.CommentDto
-import com.example.app.data.LogEntryDto
+import com.example.app.data.LocalStore
 import com.example.app.data.RunDto
 import com.example.app.data.Session
-import com.example.app.data.StageDto
 import com.example.app.data.TaskDetailDto
 import com.example.app.data.TaskDto
 import com.example.app.theme.AppTheme
+import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
-import kotlinx.serialization.json.Json
 
 /** Pipeline states that mean the worker is still holding the task. */
 private val ACTIVE_TASK_STATES = setOf("queued", "running")
-private val ACTIVE_RUN_STATES = setOf("pending", "running")
-private val prettyJson = Json { prettyPrint = true }
 
 /**
  * One task: what it is, what its last pipeline run concluded, and the discussion around it.
@@ -68,15 +67,20 @@ fun TaskDetailScreen(
     onBack: () -> Unit,
     onOpenSettings: () -> Unit,
     onOpenProfile: () -> Unit,
+    onOpenRun: (run: RunDto, number: Int) -> Unit,
 ) {
     val api = remember(session.serverUrl) { AgentizApi(session.serverUrl) }
     DisposableEffect(api) { onDispose { api.close() } }
     val scope = rememberCoroutineScope()
 
-    var detail by remember { mutableStateOf<TaskDetailDto?>(null) }
-    var runs by remember { mutableStateOf<List<RunDto>?>(null) }
-    var selectedRun by remember { mutableStateOf<RunDto?>(null) }
-    var loadingRunId by remember { mutableStateOf<String?>(null) }
+    // Seeded from disk before the first network round-trip, so a task the user has already opened
+    // repaints instantly on return instead of showing "Загрузка задачи…" again. `cachedNonce` is
+    // the comment count the cache was written with — a fresh fetch that comes back with the same
+    // count changed nothing in the thread, so nothing here needs to jar the reader mid-read.
+    val cached = remember(taskId) { LocalStore.loadTaskDetail(taskId) }
+    var detail by remember { mutableStateOf(cached?.detail) }
+    var cachedNonce by remember { mutableStateOf(cached?.commentNonce) }
+    var runs by remember { mutableStateOf(LocalStore.loadRuns(taskId)) }
     var cancellingRunId by remember { mutableStateOf<String?>(null) }
     var error by remember { mutableStateOf<String?>(null) }
     var reloadKey by remember { mutableStateOf(0) }
@@ -85,15 +89,18 @@ fun TaskDetailScreen(
 
     suspend fun load() {
         try {
-            detail = api.task(session.token, taskId)
-            runs = api.runs(session.token, taskId)
-            selectedRun = selectedRun?.let { selected ->
-                // The task response already contains a live, full trace for its latest run.
-                // For an older run retain the detail that was explicitly loaded instead of
-                // replacing its stages/logs with the compact history row on every poll.
-                detail?.latestRun?.takeIf { it.id == selected.id } ?: selected
+            val loadedDetail = api.task(session.token, taskId)
+            val loadedRuns = api.runs(session.token, taskId)
+            detail = loadedDetail
+            runs = loadedRuns
+            // The nonce this task was last written with: a poll tick that comes back with the same
+            // comment count changed nothing worth persisting again, so an active run's every-2s
+            // refresh does not also mean an every-2s disk/localStorage write for the life of it.
+            if (loadedDetail.comments.size != cachedNonce) {
+                cachedNonce = LocalStore.saveTaskDetail(taskId, loadedDetail).commentNonce
+                LocalStore.saveRuns(taskId, loadedRuns)
             }
-            if (cancellingRunId != null && runs?.firstOrNull { it.id == cancellingRunId }?.status !in ACTIVE_RUN_STATES) {
+            if (cancellingRunId != null && loadedRuns.firstOrNull { it.id == cancellingRunId }?.status !in ACTIVE_RUN_STATES) {
                 cancellingRunId = null
             }
             error = null
@@ -171,24 +178,6 @@ fun TaskDetailScreen(
         }
     }
 
-    fun openRun(run: RunDto) {
-        if (loadingRunId != null) return
-        selectedRun = run
-        loadingRunId = run.id
-        scope.launch {
-            try {
-                selectedRun = api.run(session.token, taskId, run.id)
-                error = null
-            } catch (e: ApiException) {
-                error = e.message
-            } catch (e: Throwable) {
-                error = "Ошибка сети: ${e.message ?: "неизвестная ошибка"}"
-            } finally {
-                loadingRunId = null
-            }
-        }
-    }
-
     val current = detail
     AppScaffold(
         title = current?.task?.title ?: "Задача",
@@ -201,88 +190,109 @@ fun TaskDetailScreen(
         when {
             current == null && error != null -> RetryState(message = error!!, onRetry = { reloadKey++ })
             current == null -> CenterMessage("Загрузка задачи…")
-            else -> Column(
-                modifier = Modifier
-                    .fillMaxSize()
-                    .verticalScroll(rememberScrollState())
-                    .padding(24.dp),
-            ) {
-                TaskSummary(current.task)
-
-                if (error != null) {
-                    Spacer(Modifier.height(12.dp))
-                    Text(text = error!!, style = AppTheme.Label, color = AppTheme.Danger)
+            else -> {
+                // One requester per run, keyed by id, shared between the quick-jump links above and
+                // the history cards below — a link asks the requester for the card that owns the
+                // same run id to scroll itself into view.
+                val runList = runs.orEmpty()
+                val bringIntoViewRequesters = remember(runList.map { it.id }) {
+                    runList.associate { it.id to BringIntoViewRequester() }
                 }
 
-                Spacer(Modifier.height(16.dp))
-                AppButton(
-                    text = when {
-                        busy -> "…"
-                        current.task.status in ACTIVE_TASK_STATES -> "Выполняется…"
-                        current.latestRun == null -> "Запустить пайплайн"
-                        else -> "Запустить ещё раз"
-                    },
-                    onClick = ::runPipeline,
-                    enabled = !busy && current.task.status !in ACTIVE_TASK_STATES,
-                    modifier = Modifier.fillMaxWidth(),
-                )
+                Column(
+                    modifier = Modifier
+                        .fillMaxSize()
+                        .verticalScroll(rememberScrollState())
+                        .padding(24.dp),
+                ) {
+                    TaskSummary(current.task)
 
-                val activeRun = currentRun(current, runs)
-                if (activeRun != null && activeRun.status in ACTIVE_RUN_STATES) {
-                    Spacer(Modifier.height(12.dp))
-                    val cancelling = activeRun.id == cancellingRunId
+                    if (error != null) {
+                        Spacer(Modifier.height(12.dp))
+                        Text(text = error!!, style = AppTheme.Label, color = AppTheme.Danger)
+                    }
+
+                    Spacer(Modifier.height(16.dp))
                     AppButton(
                         text = when {
                             busy -> "…"
-                            cancelling -> "Остановка запрошена…"
-                            else -> "Остановить запуск"
+                            current.task.status in ACTIVE_TASK_STATES -> "Выполняется…"
+                            current.latestRun == null -> "Запустить пайплайн"
+                            else -> "Запустить ещё раз"
                         },
-                        onClick = ::cancelPipeline,
-                        enabled = !busy && !cancelling,
+                        onClick = ::runPipeline,
+                        enabled = !busy && current.task.status !in ACTIVE_TASK_STATES,
                         modifier = Modifier.fillMaxWidth(),
                     )
-                }
 
-                if (!runs.isNullOrEmpty()) {
-                    Spacer(Modifier.height(20.dp))
-                    RunHistory(
-                        runs = runs!!,
-                        selectedRun = selectedRun ?: current.latestRun,
-                        loadingRunId = loadingRunId,
-                        onOpenRun = ::openRun,
-                    )
-                }
-
-                Spacer(Modifier.height(24.dp))
-                SectionTitle("Обсуждение")
-                Spacer(Modifier.height(12.dp))
-                if (current.comments.isEmpty()) {
-                    Text(text = "Пока нет комментариев.", style = AppTheme.Body, color = AppTheme.Muted)
-                } else {
-                    Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
-                        current.comments.forEach { CommentCard(it) }
+                    val activeRun = currentRun(current, runs)
+                    if (activeRun != null && activeRun.status in ACTIVE_RUN_STATES) {
+                        Spacer(Modifier.height(12.dp))
+                        val cancelling = activeRun.id == cancellingRunId
+                        AppButton(
+                            text = when {
+                                busy -> "…"
+                                cancelling -> "Остановка запрошена…"
+                                else -> "Остановить запуск"
+                            },
+                            onClick = ::cancelPipeline,
+                            enabled = !busy && !cancelling,
+                            modifier = Modifier.fillMaxWidth(),
+                        )
                     }
-                }
 
-                Spacer(Modifier.height(20.dp))
-                AppTextField(
-                    label = "Новый комментарий",
-                    value = comment,
-                    onValueChange = { comment = it },
-                    placeholder = "Написать…",
-                    enabled = !busy,
-                    imeAction = ImeAction.Done,
-                    // Comments here are replies to an agent's report, not one-liners.
-                    minLines = 3,
-                )
-                Spacer(Modifier.height(12.dp))
-                AppButton(
-                    text = "Отправить",
-                    onClick = ::submitComment,
-                    enabled = !busy && comment.isNotBlank(),
-                    modifier = Modifier.fillMaxWidth(),
-                )
-                Spacer(Modifier.height(24.dp))
+                    if (runList.isNotEmpty()) {
+                        // The server now keeps runs inside the task's historical context further
+                        // down the page instead of surfacing them at the top; these links stay at
+                        // the top and jump straight to a run's card in that history instead of
+                        // requiring a scroll-hunt for it.
+                        Spacer(Modifier.height(20.dp))
+                        RunQuickLinks(
+                            runs = runList,
+                            requesters = bringIntoViewRequesters,
+                            scope = scope,
+                        )
+                    }
+
+                    Spacer(Modifier.height(24.dp))
+                    SectionTitle("Обсуждение")
+                    Spacer(Modifier.height(12.dp))
+                    if (runList.isEmpty() && current.comments.isEmpty()) {
+                        Text(text = "Пока нет комментариев.", style = AppTheme.Body, color = AppTheme.Muted)
+                    } else {
+                        // Runs and comments used to sit in two separate lists — a "Запуски" block
+                        // above the discussion — which hid the actual back-and-forth: an agent's
+                        // report is a reply to the run just before it, not a document filed
+                        // somewhere else. Interleaving them by timestamp turns the page into one
+                        // timeline that reads the way the conversation actually happened.
+                        Timeline(
+                            runs = runList,
+                            comments = current.comments,
+                            requesters = bringIntoViewRequesters,
+                            onOpenRun = onOpenRun,
+                        )
+                    }
+
+                    Spacer(Modifier.height(20.dp))
+                    AppTextField(
+                        label = "Новый комментарий",
+                        value = comment,
+                        onValueChange = { comment = it },
+                        placeholder = "Написать…",
+                        enabled = !busy,
+                        imeAction = ImeAction.Done,
+                        // Comments here are replies to an agent's report, not one-liners.
+                        minLines = 3,
+                    )
+                    Spacer(Modifier.height(12.dp))
+                    AppButton(
+                        text = "Отправить",
+                        onClick = ::submitComment,
+                        enabled = !busy && comment.isNotBlank(),
+                        modifier = Modifier.fillMaxWidth(),
+                    )
+                    Spacer(Modifier.height(24.dp))
+                }
             }
         }
     }
@@ -324,202 +334,127 @@ private fun TaskSummary(task: TaskDto) {
     }
 }
 
+/**
+ * The links a reader sees before scrolling down into the task's history at all — one per run,
+ * newest first — so opening a task with a long history does not mean hunting through it by hand to
+ * find a particular run's card.
+ */
 @Composable
-private fun RunHistory(
+private fun RunQuickLinks(
     runs: List<RunDto>,
-    selectedRun: RunDto?,
-    loadingRunId: String?,
-    onOpenRun: (RunDto) -> Unit,
+    requesters: Map<String, BringIntoViewRequester>,
+    scope: CoroutineScope,
 ) {
-    SectionTitle("Запуски")
-    Spacer(Modifier.height(12.dp))
-    Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+    SectionTitle("Перейти к запуску")
+    Spacer(Modifier.height(8.dp))
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .horizontalScroll(rememberScrollState()),
+        horizontalArrangement = Arrangement.spacedBy(8.dp),
+    ) {
         runs.forEachIndexed { index, run ->
-            RunHistoryRow(
-                run = run,
-                number = runs.size - index,
-                selected = run.id == selectedRun?.id,
-                loading = run.id == loadingRunId,
-                onClick = { onOpenRun(run) },
+            val number = runs.size - index
+            Text(
+                text = "Запуск #$number",
+                style = AppTheme.Label,
+                color = AppTheme.Primary,
+                modifier = Modifier
+                    .clip(RoundedCornerShape(999.dp))
+                    .border(1.dp, AppTheme.Border, RoundedCornerShape(999.dp))
+                    .clickable {
+                        scope.launch { requesters[run.id]?.bringIntoView() }
+                    }
+                    .padding(horizontal = 12.dp, vertical = 6.dp),
             )
         }
     }
-    if (selectedRun != null) {
-        Spacer(Modifier.height(16.dp))
-        RunResult(selectedRun)
+}
+
+/** One entry of the merged timeline below: either a run's card or a comment bubble, in time order. */
+private sealed interface TimelineEntry {
+    val sortKey: String
+
+    data class Run(val run: RunDto, val number: Int) : TimelineEntry {
+        override val sortKey: String = run.startedAt ?: run.finishedAt ?: ""
+    }
+
+    data class Comment(val comment: CommentDto) : TimelineEntry {
+        override val sortKey: String = comment.createdAt ?: ""
+    }
+}
+
+/**
+ * Runs and comments merged into a single feed, oldest first, so a run's card sits next to the
+ * agent report or human reply that actually followed it. `sortKey` is the raw ISO-8601 timestamp:
+ * lexical order on that string is chronological order, which is enough to interleave the two kinds
+ * without parsing either into a real timestamp.
+ */
+@Composable
+private fun Timeline(
+    runs: List<RunDto>,
+    comments: List<CommentDto>,
+    requesters: Map<String, BringIntoViewRequester>,
+    onOpenRun: (run: RunDto, number: Int) -> Unit,
+) {
+    val entries = remember(runs, comments) {
+        val runEntries = runs.mapIndexed { index, run -> TimelineEntry.Run(run, number = runs.size - index) }
+        val commentEntries = comments.map { TimelineEntry.Comment(it) }
+        (runEntries + commentEntries).sortedBy { it.sortKey }
+    }
+    Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
+        entries.forEach { entry ->
+            when (entry) {
+                is TimelineEntry.Run -> RunTimelineRow(
+                    run = entry.run,
+                    number = entry.number,
+                    requester = requesters[entry.run.id],
+                    onClick = { onOpenRun(entry.run, entry.number) },
+                )
+                is TimelineEntry.Comment -> CommentCard(entry.comment)
+            }
+        }
     }
 }
 
 @Composable
-private fun RunHistoryRow(run: RunDto, number: Int, selected: Boolean, loading: Boolean, onClick: () -> Unit) {
+private fun RunTimelineRow(
+    run: RunDto,
+    number: Int,
+    requester: BringIntoViewRequester?,
+    onClick: () -> Unit,
+) {
     Row(
         modifier = Modifier
             .fillMaxWidth()
+            .then(if (requester != null) Modifier.bringIntoViewRequester(requester) else Modifier)
             .clip(RoundedCornerShape(AppTheme.Radius))
             .clickable(onClick = onClick)
-            .border(
-                if (selected) 2.dp else 1.dp,
-                if (selected) AppTheme.Primary else AppTheme.Border,
-                RoundedCornerShape(AppTheme.Radius),
-            )
-            .background(AppTheme.Surface, RoundedCornerShape(AppTheme.Radius))
+            .border(1.dp, AppTheme.Border, RoundedCornerShape(AppTheme.Radius))
+            // Soft, barely-there pastel blue: enough to set a run's card apart from the neutral
+            // surfaces around it without competing with the status badge for attention.
+            .background(AppTheme.RunCard, RoundedCornerShape(AppTheme.Radius))
             .padding(14.dp),
         horizontalArrangement = Arrangement.SpaceBetween,
         verticalAlignment = Alignment.CenterVertically,
     ) {
         Column(modifier = Modifier.weight(1f)) {
-            Text(text = "Запуск #$number", style = AppTheme.Label, color = AppTheme.Foreground)
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Text(text = "Запуск #$number", style = AppTheme.Label, color = AppTheme.Foreground)
+                val timestamp = formatTimestamp(run.startedAt)
+                if (timestamp != null) {
+                    Text(text = " · $timestamp", style = AppTheme.Label, color = AppTheme.Muted)
+                }
+            }
             val summary = run.resultSummary?.takeIf { it.isNotBlank() }
             if (summary != null) {
+                Spacer(Modifier.height(4.dp))
                 Text(text = summary, style = AppTheme.Label, color = AppTheme.Muted, maxLines = 1)
             }
         }
-        if (loading) Text(text = "…", style = AppTheme.Label, color = AppTheme.Muted)
-        else RunStatusBadge(run.status)
-    }
-}
-
-@Composable
-private fun RunResult(run: RunDto) {
-    SectionTitle("Результат запуска")
-    Spacer(Modifier.height(12.dp))
-    Column(
-        modifier = Modifier
-            .fillMaxWidth()
-            .border(1.dp, AppTheme.Border, RoundedCornerShape(AppTheme.Radius))
-            .background(AppTheme.Surface, RoundedCornerShape(AppTheme.Radius))
-            .padding(16.dp),
-    ) {
+        Spacer(Modifier.width(12.dp))
         RunStatusBadge(run.status)
-
-        run.stages.forEach { stage ->
-            Spacer(Modifier.height(12.dp))
-            StageRow(stage)
-        }
-
-        if (run.logs.isNotEmpty()) {
-            Spacer(Modifier.height(16.dp))
-            SectionTitle("Лог выполнения")
-            Spacer(Modifier.height(8.dp))
-            // Keep the process trace selectable: workers can emit details that need to be copied
-            // into an issue or a reply. SelectionContainer provides the native copy action on
-            // touch devices and Cmd/Ctrl+C support on desktop.
-            SelectionContainer {
-                Column(
-                    // A trace of a few hundred debug lines would otherwise push the discussion below
-                    // it out of reach. Capped and given its own scroll, the log stays inspectable
-                    // without becoming the whole page; heightIn means a short log still shrinks.
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .heightIn(max = 260.dp)
-                        .verticalScroll(rememberScrollState()),
-                    verticalArrangement = Arrangement.spacedBy(4.dp),
-                ) {
-                    run.logs.forEach { LogLine(it) }
-                }
-            }
-        }
-
-        val summary = run.resultSummary?.takeIf { it.isNotBlank() }
-        if (summary != null) {
-            Spacer(Modifier.height(16.dp))
-            SectionTitle("Итог воркера")
-            Spacer(Modifier.height(8.dp))
-            Text(text = summary, style = AppTheme.Body, color = AppTheme.Foreground)
-        }
-
-        run.workerResult?.let { result ->
-            Spacer(Modifier.height(16.dp))
-            SectionTitle("Полный ответ воркера")
-            Spacer(Modifier.height(8.dp))
-            // Worker result schemas may evolve independently. Display the complete JSON that the
-            // server persisted rather than silently dropping fields the client does not know yet.
-            SelectionContainer {
-                Text(
-                    text = prettyJson.encodeToString(result),
-                    style = AppTheme.Label,
-                    color = AppTheme.Foreground,
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .heightIn(max = 360.dp)
-                        .verticalScroll(rememberScrollState()),
-                )
-            }
-        }
-        val failure = run.errorMessage?.takeIf { it.isNotBlank() }
-        if (failure != null) {
-            Spacer(Modifier.height(12.dp))
-            Text(text = failure, style = AppTheme.Body, color = AppTheme.Danger)
-        }
     }
-}
-
-@Composable
-private fun StageRow(stage: StageDto) {
-    Row(modifier = Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
-        Text(
-            text = stage.role,
-            style = AppTheme.Label,
-            color = AppTheme.Foreground,
-            modifier = Modifier.weight(1f).padding(end = 12.dp),
-        )
-        Text(
-            text = when (stage.status) {
-                "pending" -> "ждёт"
-                "running" -> "идёт"
-                "succeeded" -> "готово"
-                "failed" -> "ошибка"
-                "skipped" -> "пропущено"
-                else -> stage.status
-            },
-            style = AppTheme.Label,
-            color = if (stage.status == "failed") AppTheme.Danger else AppTheme.Muted,
-        )
-    }
-}
-
-/** One line of the run's process trace — every level, so the "thinking" behind a run is visible. */
-@Composable
-private fun LogLine(log: LogEntryDto) {
-    val color = when (log.level) {
-        "error" -> AppTheme.Danger
-        "warn" -> AppTheme.Muted
-        "debug" -> AppTheme.Muted
-        else -> AppTheme.Foreground
-    }
-    Row(verticalAlignment = Alignment.Top) {
-        Text(
-            text = "[${log.level}]",
-            style = AppTheme.Label,
-            color = color,
-            modifier = Modifier.padding(end = 8.dp),
-        )
-        Text(
-            text = if (log.stageRole != null) "${log.stageRole}: ${log.message}" else log.message,
-            style = AppTheme.Label,
-            color = color,
-        )
-    }
-}
-
-@Composable
-private fun RunStatusBadge(status: String) {
-    val (label, color) = when (status) {
-        "pending" -> "в очереди" to AppTheme.Muted
-        "running" -> "выполняется" to AppTheme.Muted
-        "succeeded" -> "успешно" to AppTheme.Primary
-        "failed" -> "ошибка" to AppTheme.Danger
-        "cancelled" -> "отменён" to AppTheme.Disabled
-        else -> status to AppTheme.Muted
-    }
-    Text(
-        text = label,
-        style = AppTheme.Label,
-        color = AppTheme.PrimaryForeground,
-        modifier = Modifier
-            .background(color, RoundedCornerShape(999.dp))
-            .padding(horizontal = 10.dp, vertical = 3.dp),
-    )
 }
 
 @Composable
@@ -538,19 +473,26 @@ private fun CommentCard(comment: CommentDto) {
             .background(AppTheme.Background, RoundedCornerShape(AppTheme.Radius))
             .padding(14.dp),
     ) {
-        Row(verticalAlignment = Alignment.CenterVertically) {
-            Text(text = kindLabel, style = AppTheme.Label, color = kindColor)
-            val author = comment.authorName?.takeIf { it.isNotBlank() }
-            if (author != null) {
-                Text(text = " · $author", style = AppTheme.Label, color = AppTheme.Muted)
+        // Who wrote it, and when — a reply from a person should read like one, not like an
+        // unlabelled paragraph the reader has to guess the source and age of.
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.SpaceBetween,
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                val author = comment.authorName?.takeIf { it.isNotBlank() }
+                Text(text = author ?: kindLabel, style = AppTheme.Label, color = AppTheme.Foreground)
+                if (author != null) {
+                    Text(text = " · $kindLabel", style = AppTheme.Label, color = kindColor)
+                }
+            }
+            val timestamp = formatTimestamp(comment.createdAt)
+            if (timestamp != null) {
+                Text(text = timestamp, style = AppTheme.Label, color = AppTheme.Muted)
             }
         }
         Spacer(Modifier.height(8.dp))
         Text(text = comment.body, style = AppTheme.Body, color = AppTheme.Foreground)
     }
-}
-
-@Composable
-private fun SectionTitle(text: String) {
-    Text(text = text, style = AppTheme.Label, color = AppTheme.Muted)
 }
