@@ -12,6 +12,7 @@ kotlinxCoroutines = "1.10.2"
 kotlinxSerializationJson = "1.9.0"
 firebaseBom = "34.1.0"
 googleServices = "4.4.2"
+sqldelight = "2.2.1"
 
 [libraries]
 compose-runtime = { module = "org.jetbrains.compose.runtime:runtime", version.ref = "composeMultiplatform" }
@@ -31,6 +32,9 @@ ktor-client-js = { module = "io.ktor:ktor-client-js", version.ref = "ktor" }
 # Android push. The BOM pins the messaging artifact; nothing else of Firebase is used.
 firebase-bom = { module = "com.google.firebase:firebase-bom", version.ref = "firebaseBom" }
 firebase-messaging = { module = "com.google.firebase:firebase-messaging" }
+sqldelight-runtime = { module = "app.cash.sqldelight:runtime", version.ref = "sqldelight" }
+sqldelight-android-driver = { module = "app.cash.sqldelight:android-driver", version.ref = "sqldelight" }
+sqldelight-native-driver = { module = "app.cash.sqldelight:native-driver", version.ref = "sqldelight" }
 
 [plugins]
 kotlinMultiplatform = { id = "org.jetbrains.kotlin.multiplatform", version.ref = "kotlin" }
@@ -39,3 +43,4 @@ composeMultiplatform = { id = "org.jetbrains.compose", version.ref = "composeMul
 composeCompiler = { id = "org.jetbrains.kotlin.plugin.compose", version.ref = "kotlin" }
 kotlinxSerialization = { id = "org.jetbrains.kotlin.plugin.serialization", version.ref = "kotlin" }
 googleServices = { id = "com.google.gms.google-services", version.ref = "googleServices" }
+sqldelight = { id = "app.cash.sqldelight", version.ref = "sqldelight" }

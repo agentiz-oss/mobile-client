@@ -9,6 +9,7 @@ plugins {
     alias(libs.plugins.composeMultiplatform)
     alias(libs.plugins.composeCompiler)
     alias(libs.plugins.kotlinxSerialization)
+    alias(libs.plugins.sqldelight)
 }
 
 /**
@@ -133,6 +134,11 @@ kotlin {
             implementation(libs.ktor.client.core)
             implementation(libs.ktor.client.content.negotiation)
             implementation(libs.ktor.serialization.kotlinx.json)
+            // Generated Database/Queries classes from the .sq schema below live in commonMain
+            // regardless of target; only android/iOS actually open a SQLite driver against them
+            // (see LocalCache), but the runtime types they're built on have to resolve everywhere,
+            // wasmJs included.
+            implementation(libs.sqldelight.runtime)
         }
         androidMain.dependencies {
             implementation(libs.androidx.activity.compose)
@@ -142,6 +148,7 @@ kotlin {
             // time (see the plugin block above) and is handled at runtime.
             implementation(project.dependencies.platform(libs.firebase.bom))
             implementation(libs.firebase.messaging)
+            implementation(libs.sqldelight.android.driver)
         }
         desktopMain.dependencies {
             implementation(compose.desktop.currentOs)
@@ -149,6 +156,7 @@ kotlin {
         }
         iosMain.dependencies {
             implementation(libs.ktor.client.darwin)
+            implementation(libs.sqldelight.native.driver)
         }
         wasmJsMain.dependencies {
             implementation(libs.ktor.client.js)
@@ -156,6 +164,16 @@ kotlin {
         desktopTest.dependencies {
             implementation(kotlin("test"))
             implementation(libs.compose.ui.test)
+        }
+    }
+}
+
+sqldelight {
+    databases {
+        // Backs LocalCache on android/iOS only (see that file) — a single key/value table, not a
+        // real relational schema, so one small database is enough for every cached response.
+        create("AppDatabase") {
+            packageName.set("com.example.app.data.db")
         }
     }
 }

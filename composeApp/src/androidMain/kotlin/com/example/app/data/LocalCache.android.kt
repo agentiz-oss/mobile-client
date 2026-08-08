@@ -1,30 +1,32 @@
 package com.example.app.data
 
 import android.content.Context
-import android.content.SharedPreferences
+import app.cash.sqldelight.driver.android.AndroidSqliteDriver
+import com.example.app.data.db.AppDatabase
+import com.example.app.data.db.CacheEntryQueries
 
 /**
- * Its own private-preferences file, separate from [SessionStorage]'s, so clearing cached server
- * data on logout never risks touching the session prefs and vice versa. [LocalCache.init] must run
- * before the first access; [com.example.app.MainActivity] does it alongside [initSessionStorage].
+ * A real SQLite database (via SQLDelight), separate from [SessionStorage]'s prefs file, so clearing
+ * cached server data on logout never risks touching the session and vice versa. [LocalCache.init]
+ * must run before the first access; [com.example.app.MainActivity] does it alongside
+ * [initSessionStorage].
  */
 actual object LocalCache {
-    private const val PREFS = "com.example.app.cache"
-
-    private var prefs: SharedPreferences? = null
+    private var queries: CacheEntryQueries? = null
 
     fun init(context: Context) {
-        prefs = context.applicationContext.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
+        val driver = AndroidSqliteDriver(AppDatabase.Schema, context.applicationContext, "agentiz_cache.db")
+        queries = AppDatabase(driver).cacheEntryQueries
     }
 
-    actual fun get(key: String): String? = prefs?.getString(key, null)
+    actual fun get(key: String): String? = queries?.selectValue(key)?.executeAsOneOrNull()
 
     actual fun put(key: String, value: String) {
-        prefs?.edit()?.putString(key, value)?.apply()
+        queries?.upsert(key, value)
     }
 
     actual fun remove(key: String) {
-        prefs?.edit()?.remove(key)?.apply()
+        queries?.deleteEntry(key)
     }
 }
 

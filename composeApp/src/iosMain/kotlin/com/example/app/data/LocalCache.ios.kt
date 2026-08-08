@@ -1,20 +1,21 @@
 package com.example.app.data
 
-import platform.Foundation.NSUserDefaults
+import app.cash.sqldelight.driver.native.NativeSqliteDriver
+import com.example.app.data.db.AppDatabase
 
-/** Same per-app defaults database [SessionStorage] uses, under its own key prefix. */
+/** A real SQLite database (via SQLDelight) in the app's own sandboxed container. */
 actual object LocalCache {
-    private const val PREFIX = "com.example.app.cache."
+    private val queries by lazy {
+        AppDatabase(NativeSqliteDriver(AppDatabase.Schema, "agentiz_cache.db")).cacheEntryQueries
+    }
 
-    private val defaults: NSUserDefaults get() = NSUserDefaults.standardUserDefaults
-
-    actual fun get(key: String): String? = defaults.stringForKey(PREFIX + key)
+    actual fun get(key: String): String? = queries.selectValue(key).executeAsOneOrNull()
 
     actual fun put(key: String, value: String) {
-        defaults.setObject(value, PREFIX + key)
+        queries.upsert(key, value)
     }
 
     actual fun remove(key: String) {
-        defaults.removeObjectForKey(PREFIX + key)
+        queries.deleteEntry(key)
     }
 }

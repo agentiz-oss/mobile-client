@@ -1,0 +1,16 @@
+-- One key/value table backing LocalCache on android/iOS: cached projects, task lists, task
+-- details and run payloads all live here as opaque JSON under a namespaced key
+-- ("task:123", "run:456", ...), the same shape LocalCache already exposes on wasmJs/desktop.
+CREATE TABLE cacheEntry (
+    key TEXT NOT NULL PRIMARY KEY,
+    value TEXT NOT NULL
+);
+
+selectValue:
+SELECT value FROM cacheEntry WHERE key = ?;
+
+upsert:
+INSERT OR REPLACE INTO cacheEntry(key, value) VALUES (?, ?);
+
+deleteEntry:
+DELETE FROM cacheEntry WHERE key = ?;
