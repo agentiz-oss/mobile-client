@@ -13,6 +13,7 @@ import io.ktor.http.contentType
 import io.ktor.http.isSuccess
 import io.ktor.serialization.kotlinx.json.json
 import kotlinx.serialization.json.Json
+import kotlinx.serialization.json.JsonObject
 
 /** A non-2xx response from the mobile API, carrying the server's `message` when there is one. */
 class ApiException(val status: Int, message: String) : Exception(message)
@@ -113,6 +114,32 @@ class AgentizApi(baseUrl: String = platformDefaultBaseUrl()) {
         client.post("$root/tasks/$taskId/runs/$runId/cancel") {
             bearerAuth(token)
         }.decodeOrThrow<RunResponse>().data
+
+    /**
+     * Every question an agent is currently waiting on, across all the user's projects. Each one has
+     * a run parked in `waiting_input` behind it, so this is polled rather than fetched once.
+     */
+    suspend fun pendingInteractions(token: String): List<InteractionDto> =
+        client.get("$root/interactions") {
+            bearerAuth(token)
+        }.decodeOrThrow<InteractionsResponse>().data
+
+    /**
+     * Answers one question and lets its run continue. `accept` carries the filled-in form, which the
+     * server validates against the question's own `requestedSchema` — a mismatch comes back as an
+     * [ApiException] naming the offending fields. `decline` and `cancel` carry nothing.
+     */
+    suspend fun answerInteraction(
+        token: String,
+        interactionId: String,
+        action: String,
+        content: JsonObject? = null,
+    ): InteractionDto =
+        client.post("$root/interactions/$interactionId/answer") {
+            bearerAuth(token)
+            contentType(ContentType.Application.Json)
+            setBody(AnswerInteractionRequest(action = action, content = if (action == "accept") content else null))
+        }.decodeOrThrow<InteractionResponse>().data
 
     suspend fun addComment(token: String, taskId: String, body: String): CommentDto =
         client.post("$root/tasks/$taskId/comments") {

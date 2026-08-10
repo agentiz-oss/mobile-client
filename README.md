@@ -5,7 +5,7 @@ codebase renders the same UI on **web (Wasm)**, **desktop (JVM)**, **Android** a
 
 What the app does: sign in against the Agentiz mobile API, browse your projects, open a project's
 tasks, create a task, run or stop its pipeline, browse the history of all runs with their results
-and execution logs, and read the discussion thread.
+and execution logs, answer questions an agent asks mid-run, and read the discussion thread.
 
 ---
 
@@ -111,6 +111,24 @@ Override it in the field to point at any reachable instance. The app talks to
 
 Sign in with an Adminizer admin login and password. On a fresh server no administrator exists yet —
 create the first one at `/dashboard/init_user`, then use those credentials here.
+
+### Agent questions
+
+A pipeline stage can stop and ask the person a question. The run, its stage and the task then sit in
+`waiting_input`, which the app treats as an in-flight state — polling continues, and the status
+badge reads **ждёт ответа**.
+
+The question arrives with a JSON Schema describing a form. The app renders text, number, yes/no and
+`enum` fields natively and falls back to a raw JSON box for anything else, so no field is ever
+dropped from a form silently. Three answers are offered: **Ответить** (`accept`, the filled-in
+form), **Пропустить** (`decline`) and **Отменить** (`cancel`); all three unblock the run. The
+server validates an `accept` against that same schema and reports the failing fields.
+
+Open questions appear in two places: inline on the task, above the run controls, and on the
+**Вопросы** screen in the drawer, which lists everything waiting across all projects and carries a
+counter next to the menu item. Answering does not resume the run on the spot — the worker is
+long-polling for the answer and its acknowledgement is what restarts the stage, which the next poll
+picks up.
 
 ### Assistant
 

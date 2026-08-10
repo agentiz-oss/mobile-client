@@ -19,6 +19,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
 import com.composeunstyled.Text
+import com.example.app.data.InteractionDto
 import com.example.app.data.LogEntryDto
 import com.example.app.data.RunDto
 import com.example.app.data.StageDto
@@ -32,14 +33,27 @@ import kotlinx.serialization.json.jsonPrimitive
  * Pipeline states a run can still be in — shared between the task screen (which needs to know
  * whether *some* run is active to keep polling and offer "Остановить") and the run's own detail
  * page (which polls the same way while looking at just one).
+ *
+ * `waiting_input` belongs here even though nothing is executing: the run is paused on a question
+ * and resumes the moment it is answered, so treating it as finished would stop polling exactly when
+ * the screen most needs to keep refreshing.
  */
-internal val ACTIVE_RUN_STATES = setOf("pending", "running")
+internal val ACTIVE_RUN_STATES = setOf("pending", "running", "waiting_input")
 
 internal val prettyJson = Json { prettyPrint = true }
 
-/** The full record of one pipeline run: its stages, its log trace and the worker's final answer. */
+/**
+ * The full record of one pipeline run: its stages, its log trace and the worker's final answer.
+ *
+ * [onAnswerInteraction] is what makes a paused run actionable from its own page — without it the
+ * questions are still shown, but read-only, which is all a finished run's history needs.
+ */
 @Composable
-internal fun RunResult(run: RunDto) {
+internal fun RunResult(
+    run: RunDto,
+    interactionBusyId: String? = null,
+    onAnswerInteraction: ((InteractionDto, String, JsonObject?) -> Unit)? = null,
+) {
     SectionTitle("Результат запуска")
     Spacer(Modifier.height(12.dp))
     Column(
@@ -50,6 +64,25 @@ internal fun RunResult(run: RunDto) {
             .padding(16.dp),
     ) {
         RunStatusBadge(run.status)
+
+        if (run.interactions.isNotEmpty()) {
+            Spacer(Modifier.height(16.dp))
+            SectionTitle("Вопросы агента")
+            Spacer(Modifier.height(8.dp))
+            Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                run.interactions.forEach { interaction ->
+                    if (interaction.status == "pending" && onAnswerInteraction != null) {
+                        InteractionCard(
+                            interaction = interaction,
+                            busy = interactionBusyId == interaction.id,
+                            onAnswer = { action, content -> onAnswerInteraction(interaction, action, content) },
+                        )
+                    } else {
+                        AnsweredInteractionRow(interaction)
+                    }
+                }
+            }
+        }
 
         run.stages.forEach { stage ->
             Spacer(Modifier.height(12.dp))
@@ -127,6 +160,7 @@ private fun StageRow(stage: StageDto) {
                 text = when (stage.status) {
                     "pending" -> "ждёт"
                     "running" -> "идёт"
+                    "waiting_input" -> "ждёт ответа"
                     "succeeded" -> "готово"
                     "failed" -> "ошибка"
                     "skipped" -> "пропущено"
@@ -187,6 +221,8 @@ internal fun RunStatusBadge(status: String) {
     val (label, color) = when (status) {
         "pending" -> "в очереди" to AppTheme.Muted
         "running" -> "выполняется" to AppTheme.Muted
+        // The one non-terminal state that needs a person: coloured, unlike the other in-flight ones.
+        "waiting_input" -> "ждёт ответа" to AppTheme.Primary
         "succeeded" -> "успешно" to AppTheme.Primary
         "failed" -> "ошибка" to AppTheme.Danger
         "cancelled" -> "отменён" to AppTheme.Disabled

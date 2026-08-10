@@ -310,6 +310,8 @@ fun TaskStatusBadge(status: String) {
         "new" -> "новая" to AppTheme.Disabled
         "queued" -> "в очереди" to AppTheme.Muted
         "running" -> "выполняется" to AppTheme.Muted
+        // Not muted like the other in-flight states: this one is stuck until a person answers.
+        "waiting_input" -> "ждёт ответа" to AppTheme.Primary
         "waiting_review" -> "на проверке" to AppTheme.Muted
         "done" -> "готово" to AppTheme.Primary
         "failed" -> "ошибка" to AppTheme.Danger

@@ -13,6 +13,7 @@ import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
@@ -21,11 +22,14 @@ import com.example.app.components.AppScaffold
 import com.example.app.components.MenuEntry
 import com.example.app.data.AgentizApi
 import com.example.app.data.ApiException
+import com.example.app.data.InteractionDto
 import com.example.app.data.LocalStore
 import com.example.app.data.RunDto
 import com.example.app.data.Session
 import com.example.app.theme.AppTheme
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.launch
+import kotlinx.serialization.json.JsonObject
 
 /**
  * One run, in full: every stage, the complete log trace and the worker's raw result — the detail a
@@ -55,6 +59,8 @@ fun RunDetailScreen(
     var run by remember { mutableStateOf(cached) }
     var error by remember { mutableStateOf<String?>(null) }
     var reloadKey by remember { mutableStateOf(0) }
+    var answeringId by remember { mutableStateOf<String?>(null) }
+    val scope = rememberCoroutineScope()
 
     suspend fun load() {
         try {
@@ -66,6 +72,27 @@ fun RunDetailScreen(
             error = e.message
         } catch (e: Throwable) {
             error = "Ошибка сети: ${e.message ?: "неизвестная ошибка"}"
+        }
+    }
+
+    /**
+     * Answers a question this run is paused on. The reload only records that it was answered — the
+     * run leaves `waiting_input` once the worker collects the answer, which the poll below catches.
+     */
+    fun answer(interaction: InteractionDto, action: String, content: JsonObject?) {
+        if (answeringId != null) return
+        answeringId = interaction.id
+        scope.launch {
+            try {
+                api.answerInteraction(session.token, interaction.id, action, content)
+                load()
+            } catch (e: ApiException) {
+                error = e.message
+            } catch (e: Throwable) {
+                error = "Ошибка сети: ${e.message ?: "неизвестная ошибка"}"
+            } finally {
+                answeringId = null
+            }
         }
     }
 
@@ -109,7 +136,11 @@ fun RunDetailScreen(
                     Text(text = error!!, style = AppTheme.Label, color = AppTheme.Danger)
                     Spacer(Modifier.height(12.dp))
                 }
-                RunResult(current)
+                RunResult(
+                    run = current,
+                    interactionBusyId = answeringId,
+                    onAnswerInteraction = ::answer,
+                )
                 Spacer(Modifier.height(24.dp))
             }
         }

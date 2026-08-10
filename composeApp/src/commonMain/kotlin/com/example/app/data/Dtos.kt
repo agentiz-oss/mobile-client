@@ -2,6 +2,7 @@ package com.example.app.data
 
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.json.JsonElement
+import kotlinx.serialization.json.JsonObject
 
 /** Body of POST /auth/login. */
 @Serializable
@@ -97,6 +98,41 @@ data class RunDto(
      * a prematurely narrow client DTO.
      */
     val workerResult: JsonElement? = null,
+    /**
+     * Questions the agent asked during this run — `pending` ones are what the run is blocked on,
+     * the rest are the record of what was asked and how it was answered.
+     */
+    val interactions: List<InteractionDto> = emptyList(),
+)
+
+/**
+ * One question an agent asked a person mid-run (ACP form elicitation). The run and its stage sit in
+ * `waiting_input` until this is answered, so an unanswered one is not a notification the reader may
+ * postpone — it is the thing holding the pipeline up.
+ *
+ * [requestedSchema] is a JSON Schema object (`type: "object"` with `properties`) describing the form
+ * to fill in; the client renders it and the server validates the answer against the very same
+ * schema, so a form this app cannot render faithfully is still safe to submit as raw JSON.
+ */
+@Serializable
+data class InteractionDto(
+    val id: String,
+    val runId: String = "",
+    val projectId: String = "",
+    val taskId: String? = null,
+    val taskTitle: String? = null,
+    val projectName: String? = null,
+    val stageRole: String? = null,
+    val stageIndex: Int? = null,
+    val source: String = "acp",
+    val message: String = "",
+    val requestedSchema: JsonObject = JsonObject(emptyMap()),
+    val status: String = "pending",
+    val responseAction: String? = null,
+    val answeredByName: String? = null,
+    val answeredAt: String? = null,
+    val expiresAt: String? = null,
+    val createdAt: String? = null,
 )
 
 /** One-use bridge into the Adminizer Assistant WebView. */
@@ -126,6 +162,11 @@ data class TaskDetailDto(
     val task: TaskDto,
     val latestRun: RunDto? = null,
     val comments: List<CommentDto> = emptyList(),
+    /**
+     * Unanswered questions across *all* of the task's runs, not just [latestRun] — a question can
+     * belong to a run this payload does not carry in full, and it would then be invisible.
+     */
+    val pendingInteractions: List<InteractionDto> = emptyList(),
 )
 
 /** Reference to a queued run, returned by POST /tasks/{id}/run. */
@@ -155,6 +196,22 @@ data class RunsResponse(val data: List<RunDto> = emptyList())
 
 @Serializable
 data class RunResponse(val data: RunDto)
+
+@Serializable
+data class InteractionsResponse(val data: List<InteractionDto> = emptyList())
+
+@Serializable
+data class InteractionResponse(val data: InteractionDto)
+
+/**
+ * Body of POST /interactions/{id}/answer. `content` is the filled-in form and belongs to `accept`
+ * alone — the server rejects a decline or cancel that carries one.
+ */
+@Serializable
+data class AnswerInteractionRequest(
+    val action: String,
+    val content: JsonObject? = null,
+)
 
 /** Body of POST /projects/{id}/tasks. */
 @Serializable

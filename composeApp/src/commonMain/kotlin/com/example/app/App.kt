@@ -1,16 +1,19 @@
 package com.example.app
 
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import com.example.app.components.MenuEntry
+import com.example.app.data.AgentizApi
 import com.example.app.data.ProjectDto
 import com.example.app.data.Session
 import com.example.app.data.clearSession
 import com.example.app.data.loadSession
 import com.example.app.data.saveSession
+import com.example.app.screens.InteractionsScreen
 import com.example.app.screens.LoginScreen
 import com.example.app.screens.AgentDashboardScreen
 import com.example.app.screens.ProfileScreen
@@ -19,6 +22,10 @@ import com.example.app.screens.RunDetailScreen
 import com.example.app.screens.SettingsScreen
 import com.example.app.screens.TaskDetailScreen
 import com.example.app.screens.TasksScreen
+import kotlinx.coroutines.delay
+
+/** How often the drawer's question counter refreshes. Cheap enough to run for the whole session. */
+private const val INTERACTIONS_BADGE_POLL_MS = 15_000L
 
 /**
  * Where the user is once they are signed in. A sealed hierarchy rather than a string route: the
@@ -37,6 +44,9 @@ private sealed interface Destination {
      */
     data class Run(val project: ProjectDto, val taskId: String, val runId: String, val runNumber: Int?) : Destination
     data class Agent(val from: Destination) : Destination
+
+    /** Every agent question waiting on the user, regardless of which project it came from. */
+    data class Interactions(val from: Destination) : Destination
 
     /**
      * The two pages behind the drawer's footer icons. Each carries where it was opened from so
@@ -60,6 +70,7 @@ private fun Destination.project(): ProjectDto? = when (this) {
     is Destination.Task -> project
     is Destination.Run -> project
     is Destination.Agent -> from.project()
+    is Destination.Interactions -> from.project()
     is Destination.Settings -> from.project()
     is Destination.Profile -> from.project()
 }
@@ -99,6 +110,23 @@ fun App() {
         destination = Destination.Agent(destination)
     }
 
+    // How many questions are open right now, polled for the drawer's badge alone. A paused run is
+    // invisible from anywhere else in the app — the user would have to already be on the right task
+    // to discover it — so the count is what makes "агент ждёт ответа" reach them at all.
+    var pendingInteractions by remember { mutableStateOf(0) }
+    LaunchedEffect(current.serverUrl, current.token) {
+        val api = AgentizApi(current.serverUrl)
+        try {
+            while (true) {
+                pendingInteractions = runCatching { api.pendingInteractions(current.token).size }
+                    .getOrDefault(pendingInteractions)
+                delay(INTERACTIONS_BADGE_POLL_MS)
+            }
+        } finally {
+            api.close()
+        }
+    }
+
     /**
      * The drawer's contents. Built here rather than inside each screen because the menu is about
      * the session, not the page: it is the same list everywhere, with the entry for wherever you
@@ -126,6 +154,13 @@ fun App() {
                 ),
             )
         }
+        add(
+            MenuEntry(
+                label = if (pendingInteractions > 0) "Вопросы ($pendingInteractions)" else "Вопросы",
+                onClick = { destination = Destination.Interactions(destination) },
+                enabled = destination !is Destination.Interactions,
+            ),
+        )
         add(
             MenuEntry(
                 label = "Агент",
@@ -185,6 +220,19 @@ fun App() {
             onBack = { destination = Destination.Task(where.project, where.taskId) },
             onOpenSettings = openSettings,
             onOpenProfile = openProfile,
+        )
+
+        is Destination.Interactions -> InteractionsScreen(
+            session = current,
+            menu = menu,
+            onBack = { destination = where.from },
+            onOpenSettings = { destination = Destination.Settings(where) },
+            onOpenProfile = { destination = Destination.Profile(where) },
+            // A question knows its project by id and name only, which is all the task screen and
+            // the drawer need — the full project row is never loaded just to navigate.
+            onOpenTask = { projectId, projectName, taskId ->
+                destination = Destination.Task(ProjectDto(id = projectId, name = projectName ?: "Проект"), taskId)
+            },
         )
 
         is Destination.Agent -> AgentDashboardScreen(

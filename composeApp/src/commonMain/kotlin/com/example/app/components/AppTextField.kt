@@ -63,6 +63,11 @@ fun AppTextField(
     isPassword: Boolean = false,
     enabled: Boolean = true,
     imeAction: ImeAction = ImeAction.Next,
+    /**
+     * Which soft keyboard the field asks for. Only a hint to the platform — a number field still
+     * receives whatever the user manages to type, so callers validate rather than trust it.
+     */
+    keyboardType: KeyboardType = KeyboardType.Text,
     minLines: Int = 1,
     maxLines: Int = if (minLines > 1) 8 else 1,
 ) {
@@ -98,7 +103,7 @@ fun AppTextField(
             cursorBrush = SolidColor(AppTheme.Primary),
             visualTransformation = if (masked) PasswordVisualTransformation() else VisualTransformation.None,
             keyboardOptions = KeyboardOptions(
-                keyboardType = if (isPassword) KeyboardType.Password else KeyboardType.Text,
+                keyboardType = if (isPassword) KeyboardType.Password else keyboardType,
                 imeAction = imeAction,
             ),
             modifier = Modifier

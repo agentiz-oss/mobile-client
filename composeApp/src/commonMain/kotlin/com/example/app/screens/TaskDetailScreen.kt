@@ -39,6 +39,7 @@ import com.example.app.components.MenuEntry
 import com.example.app.data.AgentizApi
 import com.example.app.data.ApiException
 import com.example.app.data.CommentDto
+import com.example.app.data.InteractionDto
 import com.example.app.data.LocalStore
 import com.example.app.data.RunDto
 import com.example.app.data.Session
@@ -48,9 +49,13 @@ import com.example.app.theme.AppTheme
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
+import kotlinx.serialization.json.JsonObject
 
-/** Pipeline states that mean the worker is still holding the task. */
-private val ACTIVE_TASK_STATES = setOf("queued", "running")
+/**
+ * Pipeline states that mean the worker is still holding the task. `waiting_input` is one of them:
+ * the run is paused on a question rather than finished, and answering it resumes the very same run.
+ */
+private val ACTIVE_TASK_STATES = setOf("queued", "running", "waiting_input")
 
 /**
  * One task: what it is, what its last pipeline run concluded, and the discussion around it.
@@ -86,6 +91,9 @@ fun TaskDetailScreen(
     var reloadKey by remember { mutableStateOf(0) }
     var busy by remember { mutableStateOf(false) }
     var comment by remember { mutableStateOf("") }
+    // Answering is tracked separately from `busy`: a question is answered *while* a run is in
+    // flight, so gating it on the same flag as "Запустить" would leave it permanently disabled.
+    var answeringId by remember { mutableStateOf<String?>(null) }
 
     suspend fun load() {
         try {
@@ -157,6 +165,28 @@ fun TaskDetailScreen(
         }
     }
 
+    /**
+     * Answers a question the agent is blocked on. The run does not resume on this call: the worker
+     * is long-polling for the answer and only its acknowledgement moves the run out of
+     * `waiting_input`, so the card disappears on one of the next polls rather than instantly.
+     */
+    fun answerInteraction(interaction: InteractionDto, action: String, content: JsonObject?) {
+        if (answeringId != null) return
+        answeringId = interaction.id
+        scope.launch {
+            try {
+                api.answerInteraction(session.token, interaction.id, action, content)
+                load()
+            } catch (e: ApiException) {
+                error = e.message
+            } catch (e: Throwable) {
+                error = "Ошибка сети: ${e.message ?: "неизвестная ошибка"}"
+            } finally {
+                answeringId = null
+            }
+        }
+    }
+
     fun cancelPipeline() {
         val run = currentRun(detail, runs) ?: return
         if (busy || run.status !in ACTIVE_RUN_STATES) return
@@ -210,6 +240,17 @@ fun TaskDetailScreen(
                     if (error != null) {
                         Spacer(Modifier.height(12.dp))
                         Text(text = error!!, style = AppTheme.Label, color = AppTheme.Danger)
+                    }
+
+                    // Above the run controls on purpose: while a question is open the pipeline is
+                    // not going anywhere, so it is the only thing on this screen worth acting on.
+                    current.pendingInteractions.forEach { interaction ->
+                        Spacer(Modifier.height(16.dp))
+                        InteractionCard(
+                            interaction = interaction,
+                            busy = answeringId == interaction.id,
+                            onAnswer = { action, content -> answerInteraction(interaction, action, content) },
+                        )
                     }
 
                     Spacer(Modifier.height(16.dp))
