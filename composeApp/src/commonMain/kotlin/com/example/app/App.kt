@@ -19,6 +19,7 @@ import com.example.app.screens.AgentDashboardScreen
 import com.example.app.screens.ProfileScreen
 import com.example.app.screens.ProjectsScreen
 import com.example.app.screens.RunDetailScreen
+import com.example.app.screens.RunsScreen
 import com.example.app.screens.SettingsScreen
 import com.example.app.screens.TaskDetailScreen
 import com.example.app.screens.TasksScreen
@@ -38,15 +39,26 @@ private sealed interface Destination {
     data class Task(val project: ProjectDto, val taskId: String) : Destination
 
     /**
-     * One run's own page, opened from its card in the task's history. [runNumber] is only along
-     * for the title — the run itself is looked up by [runId] — so it is nullable for the sake of
-     * any future entry point that would not have it on hand.
+     * One run's own page, opened from its card in the task's history — or from the run board, which
+     * has no run number to hand and is not the task screen either, hence [from]: back returns to
+     * wherever the run was opened, defaulting to its task. [runNumber] is only along for the title
+     * — the run itself is looked up by [runId].
      */
-    data class Run(val project: ProjectDto, val taskId: String, val runId: String, val runNumber: Int?) : Destination
+    data class Run(
+        val project: ProjectDto,
+        val taskId: String,
+        val runId: String,
+        val runNumber: Int?,
+        val from: Destination? = null,
+    ) : Destination
+
     data class Agent(val from: Destination) : Destination
 
     /** Every agent question waiting on the user, regardless of which project it came from. */
     data class Interactions(val from: Destination) : Destination
+
+    /** Every run in flight, regardless of which project or task it belongs to. */
+    data class Runs(val from: Destination) : Destination
 
     /**
      * The two pages behind the drawer's footer icons. Each carries where it was opened from so
@@ -71,6 +83,7 @@ private fun Destination.project(): ProjectDto? = when (this) {
     is Destination.Run -> project
     is Destination.Agent -> from.project()
     is Destination.Interactions -> from.project()
+    is Destination.Runs -> from.project()
     is Destination.Settings -> from.project()
     is Destination.Profile -> from.project()
 }
@@ -114,12 +127,17 @@ fun App() {
     // invisible from anywhere else in the app — the user would have to already be on the right task
     // to discover it — so the count is what makes "агент ждёт ответа" reach them at all.
     var pendingInteractions by remember { mutableStateOf(0) }
+    // Same idea for runs: without a count here, "что-то идёт прямо сейчас" is only discoverable by
+    // opening the board, and a run that started elsewhere would never announce itself.
+    var activeRuns by remember { mutableStateOf(0) }
     LaunchedEffect(current.serverUrl, current.token) {
         val api = AgentizApi(current.serverUrl)
         try {
             while (true) {
                 pendingInteractions = runCatching { api.pendingInteractions(current.token).size }
                     .getOrDefault(pendingInteractions)
+                activeRuns = runCatching { api.runBoard(current.token).active.size }
+                    .getOrDefault(activeRuns)
                 delay(INTERACTIONS_BADGE_POLL_MS)
             }
         } finally {
@@ -154,6 +172,13 @@ fun App() {
                 ),
             )
         }
+        add(
+            MenuEntry(
+                label = if (activeRuns > 0) "Запуски ($activeRuns)" else "Запуски",
+                onClick = { destination = Destination.Runs(destination) },
+                enabled = destination !is Destination.Runs,
+            ),
+        )
         add(
             MenuEntry(
                 label = if (pendingInteractions > 0) "Вопросы ($pendingInteractions)" else "Вопросы",
@@ -217,7 +242,7 @@ fun App() {
             runId = where.runId,
             runNumber = where.runNumber,
             menu = menu,
-            onBack = { destination = Destination.Task(where.project, where.taskId) },
+            onBack = { destination = where.from ?: Destination.Task(where.project, where.taskId) },
             onOpenSettings = openSettings,
             onOpenProfile = openProfile,
         )
@@ -232,6 +257,25 @@ fun App() {
             // the drawer need — the full project row is never loaded just to navigate.
             onOpenTask = { projectId, projectName, taskId ->
                 destination = Destination.Task(ProjectDto(id = projectId, name = projectName ?: "Проект"), taskId)
+            },
+        )
+
+        is Destination.Runs -> RunsScreen(
+            session = current,
+            menu = menu,
+            onBack = { destination = where.from },
+            onOpenSettings = { destination = Destination.Settings(where) },
+            onOpenProfile = { destination = Destination.Profile(where) },
+            // A board row knows its project by id and name only — the same shortcut the questions
+            // screen takes, since navigating never needs the full project row.
+            onOpenRun = { projectId, projectName, taskId, runId ->
+                destination = Destination.Run(
+                    project = ProjectDto(id = projectId, name = projectName ?: "Проект"),
+                    taskId = taskId,
+                    runId = runId,
+                    runNumber = null,
+                    from = where,
+                )
             },
         )
 

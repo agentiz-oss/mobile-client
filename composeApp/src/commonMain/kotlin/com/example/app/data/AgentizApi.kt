@@ -103,6 +103,15 @@ class AgentizApi(baseUrl: String = platformDefaultBaseUrl()) {
             bearerAuth(token)
         }.decodeOrThrow<RunsResponse>().data
 
+    /**
+     * Every run in flight across all the user's projects, plus the ones that finished most
+     * recently. Polled while the board is open — a run's state changes without the app asking.
+     */
+    suspend fun runBoard(token: String): RunBoardDto =
+        client.get("$root/runs") {
+            bearerAuth(token)
+        }.decodeOrThrow<RunBoardResponse>().data
+
     /** Full result, stages and log of one historical run. */
     suspend fun run(token: String, taskId: String, runId: String): RunDto =
         client.get("$root/tasks/$taskId/runs/$runId") {

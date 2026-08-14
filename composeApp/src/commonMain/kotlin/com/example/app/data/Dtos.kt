@@ -103,6 +103,30 @@ data class RunDto(
      * the rest are the record of what was asked and how it was answered.
      */
     val interactions: List<InteractionDto> = emptyList(),
+    /**
+     * Where the run belongs. Only the cross-project board (`GET /runs`) fills these in — a run
+     * loaded through its own task already knows, so they stay null there.
+     */
+    val taskId: String? = null,
+    val taskTitle: String? = null,
+    val projectId: String? = null,
+    val projectName: String? = null,
+    val createdAt: String? = null,
+    /** How many questions this run is currently parked on; board rows only. */
+    val pendingInteractions: Int = 0,
+    /** Newest log line of a live run — what a board row shows instead of the whole trace. */
+    val lastLog: LogEntryDto? = null,
+)
+
+/**
+ * The run board: everything in flight, plus the runs that finished most recently. Two lists rather
+ * than one sorted one because the screen shows them as two sections and "идёт сейчас" is the part
+ * the user opened the screen for.
+ */
+@Serializable
+data class RunBoardDto(
+    val active: List<RunDto> = emptyList(),
+    val recent: List<RunDto> = emptyList(),
 )
 
 /**
@@ -196,6 +220,9 @@ data class RunsResponse(val data: List<RunDto> = emptyList())
 
 @Serializable
 data class RunResponse(val data: RunDto)
+
+@Serializable
+data class RunBoardResponse(val data: RunBoardDto = RunBoardDto())
 
 @Serializable
 data class InteractionsResponse(val data: List<InteractionDto> = emptyList())
