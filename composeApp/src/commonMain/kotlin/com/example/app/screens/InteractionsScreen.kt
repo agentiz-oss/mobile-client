@@ -2,6 +2,7 @@ package com.example.app.screens
 
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.lazy.LazyColumn
@@ -48,6 +49,13 @@ fun InteractionsScreen(
     onOpenSettings: () -> Unit,
     onOpenProfile: () -> Unit,
     onOpenTask: (projectId: String, projectName: String?, taskId: String) -> Unit,
+    /**
+     * The question a tapped notification asked for. It is pulled to the top of the list, and if it
+     * is not in the list at all — answered in the dashboard, expired, cancelled with its run — it is
+     * fetched by id and shown as closed, so the tap ends in an explanation rather than in a list
+     * that silently does not contain it.
+     */
+    focusInteractionId: String? = null,
 ) {
     val api = remember(session.serverUrl) { AgentizApi(session.serverUrl) }
     DisposableEffect(api) { onDispose { api.close() } }
@@ -61,9 +69,21 @@ fun InteractionsScreen(
     // the neighbouring cards stay usable.
     var busyId by remember { mutableStateOf<String?>(null) }
 
+    // Set only when the notification's question is no longer pending — then it is the one thing on
+    // screen worth explaining.
+    var closedFocus by remember { mutableStateOf<InteractionDto?>(null) }
+
     suspend fun load() {
         try {
-            interactions = api.pendingInteractions(session.token)
+            val pending = api.pendingInteractions(session.token)
+            interactions = pending
+            closedFocus = if (focusInteractionId != null && pending.none { it.id == focusInteractionId }) {
+                // Best effort: a question the server will not hand over (deleted project, a token
+                // that has since changed hands) is simply not shown, never an error on the list.
+                runCatching { api.interaction(session.token, focusInteractionId) }.getOrNull()
+            } else {
+                null
+            }
             error = null
         } catch (e: ApiException) {
             error = e.message
@@ -135,7 +155,7 @@ fun InteractionsScreen(
                         }
                     }
 
-                    if (current.isEmpty()) {
+                    if (current.isEmpty() && closedFocus == null) {
                         item(key = "empty") {
                             Box(
                                 modifier = Modifier.fillParentMaxSize(),
@@ -150,7 +170,13 @@ fun InteractionsScreen(
                         }
                     }
 
-                    items(current, key = { it.id }) { interaction ->
+                    closedFocus?.let { closed ->
+                        item(key = "closed-${closed.id}") { ClosedInteractionNote(closed) }
+                    }
+
+                    // Stable: only the one the notification named moves, everything else keeps the
+                    // server's oldest-first order.
+                    items(current.sortedByDescending { it.id == focusInteractionId }, key = { it.id }) { interaction ->
                         InteractionCard(
                             interaction = interaction,
                             busy = busyId == interaction.id,
@@ -164,5 +190,23 @@ fun InteractionsScreen(
                 }
             }
         }
+    }
+}
+
+/**
+ * The question a notification pointed at, after somebody else has already dealt with it.
+ *
+ * Shown instead of nothing: a push that opens an empty list looks like the app lost the question,
+ * when in fact the run has moved on — and which way it moved is the one thing worth reporting.
+ */
+@Composable
+private fun ClosedInteractionNote(interaction: InteractionDto) {
+    Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+        Text(
+            text = "Этот вопрос уже закрыт — ${interactionStatusLabel(interaction)}",
+            style = AppTheme.Label,
+            color = AppTheme.Muted,
+        )
+        AnsweredInteractionRow(interaction)
     }
 }

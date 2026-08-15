@@ -2,9 +2,11 @@ package com.example.app
 
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import com.example.app.components.MenuEntry
 import com.example.app.data.AgentizApi
@@ -23,7 +25,10 @@ import com.example.app.screens.RunsScreen
 import com.example.app.screens.SettingsScreen
 import com.example.app.screens.TaskDetailScreen
 import com.example.app.screens.TasksScreen
+import com.example.app.push.Push
+import com.example.app.push.ensurePushRegistration
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.launch
 
 /** How often the drawer's question counter refreshes. Cheap enough to run for the whole session. */
 private const val INTERACTIONS_BADGE_POLL_MS = 15_000L
@@ -54,8 +59,14 @@ private sealed interface Destination {
 
     data class Agent(val from: Destination) : Destination
 
-    /** Every agent question waiting on the user, regardless of which project it came from. */
-    data class Interactions(val from: Destination) : Destination
+    /**
+     * Every agent question waiting on the user, regardless of which project it came from.
+     *
+     * [focusInteractionId] is set when the screen was opened from a notification: that one question
+     * is pulled to the top and opened, and it is fetched by id if it is no longer in the pending
+     * list — a push tapped ten minutes late must still explain itself.
+     */
+    data class Interactions(val from: Destination, val focusInteractionId: String? = null) : Destination
 
     /** Every run in flight, regardless of which project or task it belongs to. */
     data class Runs(val from: Destination) : Destination
@@ -102,8 +113,24 @@ fun App() {
     // very first frame is already the right screen, with no login flash before it.
     var session by remember { mutableStateOf(loadSession()) }
     var destination by remember { mutableStateOf<Destination>(Destination.Projects) }
+    val scope = rememberCoroutineScope()
 
     fun logout() {
+        // Tell the server to forget this phone *before* the session is dropped — afterwards there is
+        // no token left to authenticate the call, and the device would keep receiving questions
+        // belonging to a user who is no longer signed in here.
+        val signedIn = session
+        val pushToken = Push.currentToken()
+        if (signedIn != null && pushToken != null) {
+            scope.launch {
+                val api = AgentizApi(signedIn.serverUrl)
+                try {
+                    runCatching { api.unregisterDevice(signedIn.token, pushToken) }
+                } finally {
+                    api.close()
+                }
+            }
+        }
         clearSession()
         session = null
         destination = Destination.Projects
@@ -121,6 +148,38 @@ fun App() {
 
     fun openAgent() {
         destination = Destination.Agent(destination)
+    }
+
+    // Push, in both directions. Asking for the token only once someone is signed in keeps the
+    // permission prompt away from the login screen, where it would be a prompt about nothing.
+    LaunchedEffect(current.token) { ensurePushRegistration() }
+
+    val registration by Push.registration.collectAsState()
+    LaunchedEffect(registration, current.token, current.serverUrl) {
+        val push = registration ?: return@LaunchedEffect
+        val api = AgentizApi(current.serverUrl)
+        try {
+            // Failure is survivable and deliberately silent: without a registered token the user
+            // simply gets no notifications, which is exactly how the app behaved before.
+            runCatching { api.registerDevice(current.token, push.token, push.platform, BuildInfo.label) }
+                .onFailure { println("[push] device registration failed: ${it.message}") }
+        } finally {
+            api.close()
+        }
+    }
+
+    // A tapped notification. It can arrive at any moment, including before the first frame after a
+    // cold start, so it is consumed here rather than by whichever screen happens to be open.
+    val pendingRoute by Push.route.collectAsState()
+    LaunchedEffect(pendingRoute) {
+        val route = Push.consumeRoute() ?: return@LaunchedEffect
+        val here = destination
+        destination = Destination.Interactions(
+            // Back has to lead somewhere the user recognises. Opening a second question while
+            // already on the list would otherwise make the list its own parent.
+            from = if (here is Destination.Interactions) here.from else here,
+            focusInteractionId = route.interactionId,
+        )
     }
 
     // How many questions are open right now, polled for the drawer's badge alone. A paused run is
@@ -250,6 +309,7 @@ fun App() {
         is Destination.Interactions -> InteractionsScreen(
             session = current,
             menu = menu,
+            focusInteractionId = where.focusInteractionId,
             onBack = { destination = where.from },
             onOpenSettings = { destination = Destination.Settings(where) },
             onOpenProfile = { destination = Destination.Profile(where) },

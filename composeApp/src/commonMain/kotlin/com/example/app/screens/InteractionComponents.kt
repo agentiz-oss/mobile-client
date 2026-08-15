@@ -31,6 +31,7 @@ import kotlinx.serialization.json.JsonElement
 import kotlinx.serialization.json.JsonNull
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.JsonPrimitive
+import kotlinx.serialization.json.booleanOrNull
 import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.Json
 
@@ -47,13 +48,33 @@ import kotlinx.serialization.json.Json
 /** The kinds of field the form renders natively; everything else becomes [FieldKind.RAW]. */
 internal enum class FieldKind { TEXT, NUMBER, BOOLEAN, CHOICE, RAW }
 
-/** One property of `requestedSchema.properties`, reduced to what the renderer needs. */
+/** The value a [FieldKind.CHOICE] field holds while "Другое" is selected instead of an option. */
+internal const val OTHER_SELECTION = "other"
+
+/**
+ * One option of a choice field. [value] is the JSON the answer must carry — a schema commonly pairs
+ * a compact `const` with a human-readable `title`, and submitting the title is exactly what the
+ * server rejects.
+ */
+internal data class InteractionChoice(
+    val value: JsonElement,
+    val label: String,
+    val description: String?,
+)
+
+/**
+ * One property of `requestedSchema.properties`, reduced to what the renderer needs.
+ *
+ * [otherName] is the sibling property a free-text "Other" answer goes into: Codex splits such a
+ * question into the choice itself plus a `<name>__other` field, and renders as one control here.
+ */
 internal data class InteractionField(
     val name: String,
     val title: String,
     val description: String?,
     val kind: FieldKind,
-    val options: List<String>,
+    val choices: List<InteractionChoice>,
+    val otherName: String?,
     val required: Boolean,
     val initial: String,
 )
@@ -69,6 +90,37 @@ private fun JsonElement.asText(): String = when (this) {
 private fun JsonObject.stringField(key: String): String? =
     (this[key] as? JsonPrimitive)?.takeIf { it !is JsonNull }?.content?.takeIf { it.isNotBlank() }
 
+/** The `_meta.codex` annotations Codex attaches to the two halves of an "Other" question. */
+private fun JsonObject.codexMeta(): JsonObject? = (this["_meta"] as? JsonObject)?.get("codex") as? JsonObject
+
+/** The question this property carries the free-text answer for, if it is such a sibling. */
+private fun JsonObject.otherAnswerFor(): String? {
+    val codex = codexMeta() ?: return null
+    if ((codex["isOtherAnswer"] as? JsonPrimitive)?.booleanOrNull != true) return null
+    return (codex["questionId"] as? JsonPrimitive)?.takeIf { it.isString }?.content
+}
+
+/**
+ * The options of a choice field. `oneOf` comes first because that is what ACP agents emit: a
+ * compact `const` to submit next to the title a person reads. A bare `enum` keeps its values as
+ * they are typed in the schema — a numeric option must not turn into the string of its digits.
+ */
+private fun choicesOf(definition: JsonObject): List<InteractionChoice> {
+    val oneOf = (definition["oneOf"] as? JsonArray)?.mapNotNull { entry ->
+        val option = entry as? JsonObject ?: return@mapNotNull null
+        val const = option["const"] ?: return@mapNotNull null
+        InteractionChoice(
+            value = const,
+            label = option.stringField("title") ?: const.asText(),
+            description = option.stringField("description"),
+        )
+    } ?: emptyList()
+    if (oneOf.isNotEmpty()) return oneOf
+    return (definition["enum"] as? JsonArray)
+        ?.map { InteractionChoice(value = it, label = it.asText(), description = null) }
+        ?: emptyList()
+}
+
 /** The form to render for this question, in the order the schema declares its properties. */
 internal fun InteractionDto.formFields(): List<InteractionField> {
     val properties = requestedSchema["properties"] as? JsonObject ?: return emptyList()
@@ -77,14 +129,22 @@ internal fun InteractionDto.formFields(): List<InteractionField> {
         ?.toSet()
         ?: emptySet()
 
-    return properties.map { (name, raw) ->
+    // A `<question>__other` property is not a question of its own — it is the "Другое" branch of
+    // the one it names, and is rendered inside it rather than as a second, cryptically named field.
+    val otherOf = properties.mapNotNull { (name, raw) ->
+        (raw as? JsonObject)?.otherAnswerFor()?.let { question -> question to name }
+    }.toMap()
+    val otherNames = otherOf.values.toSet()
+
+    return properties.mapNotNull { (name, raw) ->
+        if (name in otherNames) return@mapNotNull null
         val definition = raw as? JsonObject ?: JsonObject(emptyMap())
         // `type` may legitimately be a list ("string" or null); only a plain scalar is rendered
         // natively, the union falls through to the raw box.
         val type = definition.stringField("type")
-        val options = (definition["enum"] as? JsonArray)?.map { it.asText() } ?: emptyList()
+        val choices = choicesOf(definition)
         val kind = when {
-            options.isNotEmpty() -> FieldKind.CHOICE
+            choices.isNotEmpty() -> FieldKind.CHOICE
             type == "boolean" -> FieldKind.BOOLEAN
             type == "number" || type == "integer" -> FieldKind.NUMBER
             // An untyped property is a free-text one in practice; every ACP form seen so far names
@@ -98,9 +158,14 @@ internal fun InteractionDto.formFields(): List<InteractionField> {
             title = definition.stringField("title") ?: name,
             description = definition.stringField("description"),
             kind = kind,
-            options = options,
+            choices = choices,
+            otherName = otherOf[name],
             required = name in required,
             initial = when {
+                // A choice is held as the index of the picked option, so the answer can carry the
+                // option's own JSON value rather than whatever its label happened to say.
+                kind == FieldKind.CHOICE ->
+                    choices.indexOfFirst { it.value == default }.takeIf { it >= 0 }?.toString() ?: ""
                 default != null -> default.asText()
                 kind == FieldKind.BOOLEAN -> "false"
                 else -> ""
@@ -108,6 +173,14 @@ internal fun InteractionDto.formFields(): List<InteractionField> {
         )
     }
 }
+
+/** The free text typed into a choice field's "Другое" branch, if there is one. */
+private fun InteractionField.otherText(values: Map<String, String>): String =
+    otherName?.let { values[it] }?.trim().orEmpty()
+
+/** The option currently picked, or null while none is (including when "Другое" is). */
+private fun InteractionField.pickedChoice(values: Map<String, String>): InteractionChoice? =
+    (values[name] ?: initial).toIntOrNull()?.let { choices.getOrNull(it) }
 
 /**
  * The `content` object for an `accept`. A blank optional field is left out entirely rather than
@@ -118,6 +191,20 @@ internal fun buildAnswerContent(fields: List<InteractionField>, values: Map<Stri
     buildJsonObject {
         fields.forEach { field ->
             val text = values[field.name] ?: field.initial
+            if (field.kind == FieldKind.CHOICE) {
+                val other = field.otherText(values)
+                // "Другое" replaces the option instead of accompanying it: the agent reads the
+                // sibling field, and the choice — optional in exactly this schema — would only give
+                // the server's validator an empty value to reject.
+                if (field.otherName != null && (text == OTHER_SELECTION || text.isBlank()) && other.isNotEmpty()) {
+                    put(field.otherName, JsonPrimitive(other))
+                    return@forEach
+                }
+                // The option's own JSON, not its label and not a string of it: `oneOf` consts and
+                // numeric `enum` values are compared by value on the server.
+                field.pickedChoice(values)?.let { put(field.name, it.value) }
+                return@forEach
+            }
             if (field.kind != FieldKind.BOOLEAN && text.isBlank()) return@forEach
             when (field.kind) {
                 FieldKind.BOOLEAN -> put(field.name, JsonPrimitive(text.equals("true", ignoreCase = true)))
@@ -136,10 +223,19 @@ internal fun buildAnswerContent(fields: List<InteractionField>, values: Map<Stri
         }
     }
 
-/** Required fields still empty. Booleans always have a value, so they can never be missing. */
+/**
+ * Fields that still block sending. Booleans always hold a value, so they can never be missing; a
+ * choice always does, whether the schema marks it required or not — an unanswered question submitted
+ * as an empty form is accepted by the server and read by the agent as "no preference", which is a
+ * worse outcome than a disabled button.
+ */
 internal fun missingRequired(fields: List<InteractionField>, values: Map<String, String>): List<InteractionField> =
     fields.filter { field ->
-        field.required && field.kind != FieldKind.BOOLEAN && (values[field.name] ?: field.initial).isBlank()
+        when (field.kind) {
+            FieldKind.BOOLEAN -> false
+            FieldKind.CHOICE -> field.pickedChoice(values) == null && field.otherText(values).isEmpty()
+            else -> field.required && (values[field.name] ?: field.initial).isBlank()
+        }
     }
 
 /**
@@ -222,8 +318,10 @@ internal fun InteractionCard(
             FieldEditor(
                 field = field,
                 value = values[field.name] ?: field.initial,
+                otherValue = field.otherName?.let { values[it] }.orEmpty(),
                 enabled = !busy,
                 onValueChange = { values[field.name] = it },
+                onOtherChange = { text -> field.otherName?.let { values[it] = text } },
             )
         }
 
@@ -281,8 +379,10 @@ internal fun InteractionCard(
 private fun FieldEditor(
     field: InteractionField,
     value: String,
+    otherValue: String,
     enabled: Boolean,
     onValueChange: (String) -> Unit,
+    onOtherChange: (String) -> Unit,
 ) {
     val label = if (field.required) "${field.title} *" else field.title
     when (field.kind) {
@@ -302,12 +402,30 @@ private fun FieldEditor(
             Text(text = label, style = AppTheme.Label, color = AppTheme.Foreground)
             FieldHint(field.description)
             Spacer(Modifier.height(8.dp))
+            // Pills are addressed by position, so an option's own value — which may be a number or
+            // any other JSON — never has to survive a round trip through the UI as text.
+            val options = field.choices.mapIndexed { index, choice -> index.toString() to choice.label } +
+                if (field.otherName != null) listOf(OTHER_SELECTION to "Другое") else emptyList()
             OptionPills(
-                options = field.options.map { it to it },
+                options = options,
                 selected = value,
                 enabled = enabled,
                 onSelect = onValueChange,
             )
+            // Only what the picked option says about itself; the descriptions of the others would
+            // turn a question into a wall of text on a phone.
+            FieldHint(field.choices.getOrNull(value.toIntOrNull() ?: -1)?.description)
+            if (field.otherName != null && value == OTHER_SELECTION) {
+                Spacer(Modifier.height(8.dp))
+                AppTextField(
+                    label = "Свой вариант",
+                    value = otherValue,
+                    onValueChange = onOtherChange,
+                    placeholder = "Ответ…",
+                    enabled = enabled,
+                    imeAction = ImeAction.Done,
+                )
+            }
         }
 
         else -> Column(modifier = Modifier.fillMaxWidth()) {

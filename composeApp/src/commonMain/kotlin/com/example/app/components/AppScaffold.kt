@@ -39,6 +39,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.drawWithContent
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.TransformOrigin
 import androidx.compose.ui.graphics.graphicsLayer
@@ -87,6 +88,14 @@ private val PushedCorner = 24.dp
 
 /** Drop shadow under the pushed-back screen, so it sits visibly above the menu. */
 private val ShadowElevation = 16.dp
+
+/**
+ * How far the pushed-back screen washes out, as the alpha of a veil in the screen's own background
+ * colour laid over it at full push. Fading it *towards white* rather than dimming it towards black
+ * keeps the card reading as the lit surface it is while draining the contrast out of its text and
+ * accents, so the menu — untouched — is the only thing left worth looking at.
+ */
+private const val PushedFade = 0.4f
 
 /** Fling speed, in px/s, past which the drawer opens or closes regardless of how far it travelled. */
 private const val FlingVelocity = 400f
@@ -298,7 +307,14 @@ private fun ContentSheet(drawer: DrawerState, content: @Composable () -> Unit) {
                 clip = true
                 shadowElevation = ShadowElevation.toPx() * p
             }
-            .background(AppTheme.Background),
+            .background(AppTheme.Background)
+            // Drawn, not composed: the veil is a draw-phase read of the same offset the transform
+            // uses, so dragging the drawer repaints it without recomposing the screen underneath.
+            .drawWithContent {
+                drawContent()
+                val fade = PushedFade * drawer.progress
+                if (fade > 0f) drawRect(color = AppTheme.Background, alpha = fade)
+            },
     ) {
         // Padded here, not on the frame: the card is what the user reads, and it is the thing that
         // has to clear the status bar and the home indicator.

@@ -12,6 +12,20 @@ plugins {
 }
 
 /**
+ * Firebase config is a per-deployment secret and is not in the repository. Applying the plugin
+ * without it fails the Android build outright, so it is applied only when the file is actually
+ * there: a clone with no credentials still builds, installs and runs — it just never receives a
+ * notification. Drop the file downloaded from the Firebase console next to this build script to
+ * turn push on.
+ */
+val googleServicesJson = layout.projectDirectory.file("google-services.json").asFile
+if (googleServicesJson.exists()) {
+    apply(plugin = libs.plugins.googleServices.get().pluginId)
+} else {
+    logger.lifecycle("composeApp: no google-services.json — Android push notifications will be inert in this build")
+}
+
+/**
  * Version and commit as they were when the binary was built. Read from git here rather than at
  * runtime because no target ships a git checkout alongside the app — the numbers have to be baked
  * into the source.
@@ -123,6 +137,11 @@ kotlin {
         androidMain.dependencies {
             implementation(libs.androidx.activity.compose)
             implementation(libs.ktor.client.okhttp)
+            // Push. Compiled in unconditionally so the messaging service is always part of the app;
+            // whether it can do anything depends on google-services.json being present at build
+            // time (see the plugin block above) and is handled at runtime.
+            implementation(project.dependencies.platform(libs.firebase.bom))
+            implementation(libs.firebase.messaging)
         }
         desktopMain.dependencies {
             implementation(compose.desktop.currentOs)

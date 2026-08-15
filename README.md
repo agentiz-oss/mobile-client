@@ -130,6 +130,27 @@ counter next to the menu item. Answering does not resume the run on the spot —
 long-polling for the answer and its acknowledgement is what restarts the stage, which the next poll
 picks up.
 
+### Push notifications
+
+A question is worth nothing until someone sees it, so the server pushes one as soon as an agent
+stops to ask: Android through FCM, iOS straight through APNs (no Firebase SDK on iOS — the app
+registers its raw APNs token). Tapping the notification opens the **Вопросы** screen with that
+question pulled to the top, from a cold start as well as from the background.
+
+- The token is registered with `POST /devices` right after sign-in, and again whenever the OS
+  refreshes it. Signing out calls `DELETE /devices`, so a shared phone stops receiving the previous
+  user's questions.
+- Permission is asked for after sign-in, never at launch: before there is a session there is nothing
+  to notify about.
+- If the question was already answered elsewhere by the time the notification is tapped, the screen
+  fetches it by id and shows how it ended instead of an empty list.
+
+**Android** needs `composeApp/google-services.json` from the Firebase console. Without it the build
+still works — the Google Services plugin is applied only when the file is present, and the app runs
+with push inert. **iOS** needs the *Push Notifications* capability on the target (see
+[BUILD-IOS.md](BUILD-IOS.md)). Both also need the server side configured; see the mobile API layer's
+README for `AGENTIZ_FCM_SERVICE_ACCOUNT` and the `AGENTIZ_APNS_*` variables.
+
 ### Assistant
 
 The **Агент** item opens the `agentiz-assistant` chat. The app first exchanges its mobile JWT at
@@ -166,12 +187,13 @@ composeApp/src/
   commonMain/     the entire app — UI, navigation, API client, DTOs
     components/   AppButton, AppTextField
     data/         AgentizApi, DTOs, Session, per-platform server default
+    push/         notification payload -> destination, token hand-off
     screens/      Login, Projects, Tasks, TaskDetail
     theme/        AppTheme design tokens
   wasmJsMain/     ComposeViewport entrypoint + index.html
   desktopMain/    Window entrypoint
-  androidMain/    MainActivity
-  iosMain/        MainViewController
+  androidMain/    MainActivity, FCM messaging service
+  iosMain/        MainViewController, APNs registration
   desktopTest/    UI tests
 ```
 

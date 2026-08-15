@@ -4,6 +4,8 @@
     <uses-permission android:name="android.permission.INTERNET" />
     <!-- Normal permission: granted at install time, never prompts the user. -->
     <uses-permission android:name="android.permission.VIBRATE" />
+    <!-- Runtime permission on Android 13+; asked for after sign-in, not at launch. -->
+    <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
 
     <application
         android:allowBackup="true"
@@ -20,6 +22,24 @@
                 <category android:name="android.intent.category.LAUNCHER" />
             </intent-filter>
         </activity>
+
+        <!--
+            Receives refreshed FCM tokens, and messages that arrive while the app is in the
+            foreground. A backgrounded app never reaches this: the system draws the notification
+            from the payload itself and the tap starts MainActivity with the data as extras.
+        -->
+        <service
+            android:name=".push.AgentizMessagingService"
+            android:exported="false">
+            <intent-filter>
+                <action android:name="com.google.firebase.MESSAGING_EVENT" />
+            </intent-filter>
+        </service>
+
+        <!-- Must exist before O+ can show anything, and must match the server's payload. -->
+        <meta-data
+            android:name="com.google.firebase.messaging.default_notification_channel_id"
+            android:value="agentiz-interactions" />
     </application>
 
 </manifest>

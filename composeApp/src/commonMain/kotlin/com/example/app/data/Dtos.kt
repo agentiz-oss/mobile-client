@@ -240,6 +240,30 @@ data class AnswerInteractionRequest(
     val content: JsonObject? = null,
 )
 
+/**
+ * Body of POST /devices — where to send this install's notifications. `platform` decides the
+ * transport server-side: `android` goes through FCM, `ios` straight to APNs.
+ */
+@Serializable
+data class RegisterDeviceRequest(
+    val token: String,
+    val platform: String,
+    val appVersion: String? = null,
+    val deviceName: String? = null,
+)
+
+/** Body of DELETE /devices. */
+@Serializable
+data class UnregisterDeviceRequest(val token: String)
+
+/**
+ * `pushEnabled` is about the *server*, not this device: it says whether the deployment has FCM/APNs
+ * credentials at all. Without them the token is still stored, so enabling push later needs no new
+ * app release.
+ */
+@Serializable
+data class RegisterDeviceResponse(val pushEnabled: Boolean = false)
+
 /** Body of POST /projects/{id}/tasks. */
 @Serializable
 data class CreateTaskRequest(

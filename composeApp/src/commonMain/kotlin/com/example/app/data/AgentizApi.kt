@@ -4,6 +4,7 @@ import io.ktor.client.HttpClient
 import io.ktor.client.call.body
 import io.ktor.client.plugins.contentnegotiation.ContentNegotiation
 import io.ktor.client.request.bearerAuth
+import io.ktor.client.request.delete
 import io.ktor.client.request.get
 import io.ktor.client.request.post
 import io.ktor.client.request.setBody
@@ -149,6 +150,53 @@ class AgentizApi(baseUrl: String = platformDefaultBaseUrl()) {
             contentType(ContentType.Application.Json)
             setBody(AnswerInteractionRequest(action = action, content = if (action == "accept") content else null))
         }.decodeOrThrow<InteractionResponse>().data
+
+    /**
+     * One question by id — what a tapped notification opens. Separate from [pendingInteractions]
+     * because minutes can pass between the push and the tap: by then the question may be answered
+     * and gone from the list, and the app still has to show what happened to it.
+     */
+    suspend fun interaction(token: String, interactionId: String): InteractionDto =
+        client.get("$root/interactions/$interactionId") {
+            bearerAuth(token)
+        }.decodeOrThrow<InteractionResponse>().data
+
+    /**
+     * Tells the server where to send this install's notifications. Idempotent and keyed by the push
+     * token, so it is safe to call on every launch and on every token refresh.
+     */
+    suspend fun registerDevice(
+        token: String,
+        pushToken: String,
+        platform: String,
+        appVersion: String? = null,
+        deviceName: String? = null,
+    ): RegisterDeviceResponse =
+        client.post("$root/devices") {
+            bearerAuth(token)
+            contentType(ContentType.Application.Json)
+            setBody(
+                RegisterDeviceRequest(
+                    token = pushToken,
+                    platform = platform,
+                    appVersion = appVersion,
+                    deviceName = deviceName,
+                ),
+            )
+        }.decodeOrThrow()
+
+    /**
+     * Signing out: this phone stops being reachable for the current user's questions. The token
+     * travels in the body rather than the path — an FCM registration token is opaque and long, and
+     * a URL is only a safe place for it as long as it happens to need no escaping.
+     */
+    suspend fun unregisterDevice(token: String, pushToken: String) {
+        client.delete("$root/devices") {
+            bearerAuth(token)
+            contentType(ContentType.Application.Json)
+            setBody(UnregisterDeviceRequest(token = pushToken))
+        }
+    }
 
     suspend fun addComment(token: String, taskId: String, body: String): CommentDto =
         client.post("$root/tasks/$taskId/comments") {

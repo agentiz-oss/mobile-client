@@ -35,3 +35,5 @@ iosApp/fastlane/app_store_connect_api_key.json
 *.mobileprovision
 apple-signing
 .playwright-mcp
+# Firebase config for Android push — per-deployment, not a repository artifact
+composeApp/google-services.json

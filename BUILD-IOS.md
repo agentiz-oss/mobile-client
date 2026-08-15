@@ -73,6 +73,31 @@ support files for iOS 18, but `ideviceinstaller` talks to the phone regardless.
 installs fine and then dies with SIGABRT the moment you tap it. The key exists
 for ProMotion displays; without it iOS caps the app at 60Hz.
 
+## Push notifications
+
+The app registers for plain APNs — no Firebase, no CocoaPods. `AppDelegate` in
+`iosApp/iosApp/iOSApp.swift` hands the device token and any tapped notification
+to the shared Kotlin `Push` object; the server signs its own APNs requests with
+a `.p8` key (`AGENTIZ_APNS_*` in the mobile API layer).
+
+Two things are not in the repository and have to be set in Xcode / the developer
+portal:
+
+- the **Push Notifications** capability on the `iosApp` target, which is what
+  puts `aps-environment` into the entitlements. Without it
+  `registerForRemoteNotifications` fails with "no valid aps-entitlement string".
+- an APNs **key** (Keys → new key with APNs enabled) — the `.p8` goes to the
+  *server*, not into the app.
+
+The wildcard provisioning profile used above (`5K5GDFV386.*`) does **not** carry
+the push entitlement. A build meant to receive notifications needs an explicit
+App ID with Push Notifications enabled and a profile for it; the wildcard build
+still installs and runs, it simply never registers.
+
+Development builds talk to Apple's sandbox, so the server must run with
+`AGENTIZ_APNS_ENV=sandbox` for them — a sandbox token addressed at the
+production host comes back as `BadDeviceToken`.
+
 ## Local changes this required
 
 `iosApp/Configuration/Config.xcconfig` had an empty `TEAM_ID`; it is now
