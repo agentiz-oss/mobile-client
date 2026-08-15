@@ -161,11 +161,19 @@ kotlin {
 }
 
 android {
+    // Deliberately still the template package, and not the application id below: the manifest names
+    // its components relatively (`.MainActivity`, `.push.AgentizMessagingService`) and AGP resolves
+    // those against the namespace, so changing it without moving every source file under
+    // `cx/m42/agentoz/` would leave the launcher activity pointing at a class that does not exist.
+    // The namespace is a compile-time detail — it is not what identifies the app to FCM or to Play.
     namespace = "com.example.app"
     compileSdk = libs.versions.androidCompileSdk.get().toInt()
 
     defaultConfig {
-        applicationId = "com.example.app"
+        // What actually identifies the installation: to Play, and to FCM, whose google-services.json
+        // must contain a client with exactly this package name (it lists both this and the old one).
+        // Matches the iOS bundle id in iosApp/Configuration/Config.xcconfig.
+        applicationId = "cx.m42.agentoz"
         minSdk = libs.versions.androidMinSdk.get().toInt()
         targetSdk = libs.versions.androidTargetSdk.get().toInt()
         versionCode = 1
