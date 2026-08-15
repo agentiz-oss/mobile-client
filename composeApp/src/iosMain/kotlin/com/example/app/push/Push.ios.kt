@@ -1,6 +1,9 @@
 package com.example.app.push
 
 import platform.UIKit.UIApplication
+// Not a member of UIApplication: UIKit declares it in the UIRemoteNotifications category, which
+// Kotlin/Native exposes as a package-level extension. Without this import it does not resolve.
+import platform.UIKit.registerForRemoteNotifications
 import platform.UserNotifications.UNAuthorizationOptionAlert
 import platform.UserNotifications.UNAuthorizationOptionBadge
 import platform.UserNotifications.UNAuthorizationOptionSound
