@@ -161,7 +161,14 @@ fun App() {
         try {
             // Failure is survivable and deliberately silent: without a registered token the user
             // simply gets no notifications, which is exactly how the app behaved before.
-            runCatching { api.registerDevice(current.token, push.token, push.platform, BuildInfo.label) }
+            runCatching {
+                api.registerDevice(
+                    token = current.token,
+                    pushToken = push.token,
+                    platform = push.platform,
+                    appVersion = BuildInfo.label,
+                )
+            }
                 .onFailure { println("[push] device registration failed: ${it.message}") }
         } finally {
             api.close()

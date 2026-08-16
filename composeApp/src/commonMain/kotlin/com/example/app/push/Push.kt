@@ -17,7 +17,7 @@ data class PushRoute(
     val taskId: String? = null,
 )
 
-/** The address this install is reachable at, as the OS handed it over. */
+/** The address this install is reachable at, as the OS handed it over: an FCM token, either platform. */
 data class PushRegistration(val token: String, val platform: String)
 
 /**

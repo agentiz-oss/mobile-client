@@ -241,8 +241,8 @@ data class AnswerInteractionRequest(
 )
 
 /**
- * Body of POST /devices — where to send this install's notifications. `platform` decides the
- * transport server-side: `android` goes through FCM, `ios` straight to APNs.
+ * Body of POST /devices — where to send this install's notifications. Both platforms register a
+ * Firebase token, so the token alone says everything about how to reach the device.
  */
 @Serializable
 data class RegisterDeviceRequest(

@@ -37,3 +37,5 @@ apple-signing
 .playwright-mcp
 # Firebase config for Android push — per-deployment, not a repository artifact
 composeApp/google-services.json
+# Same, for iOS once the app registers an FCM token instead of a raw APNs one
+iosApp/iosApp/GoogleService-Info.plist
