@@ -5,3 +5,6 @@ package com.example.app.push
  * a third transport on the server for a target that is only used for trying the app out.
  */
 actual fun ensurePushRegistration() = Unit
+
+/** No badge in the browser build. */
+actual fun setAppBadge(count: Int) = Unit

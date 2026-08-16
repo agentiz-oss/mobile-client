@@ -36,3 +36,18 @@ actual fun ensurePushRegistration() {
         }
     }
 }
+
+/**
+ * iOS draws the badge from a number the app owns, not from the notifications on screen — clearing
+ * the notification centre does not clear it, and neither does answering the question it was about.
+ *
+ * `applicationIconBadgeNumber` rather than `setBadgeCount` on purpose: the latter arrived in iOS 16
+ * and this target still deploys to 15. It is a member property of UIApplication — unlike
+ * `registerForRemoteNotifications` above, which is a category and needs its own import. UIKit is
+ * main-thread only, and this runs on whatever dispatcher the polling coroutine happens to be on.
+ */
+actual fun setAppBadge(count: Int) {
+    dispatch_async(dispatch_get_main_queue()) {
+        UIApplication.sharedApplication.applicationIconBadgeNumber = count.toLong()
+    }
+}

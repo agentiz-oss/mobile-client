@@ -27,6 +27,7 @@ import com.example.app.screens.TaskDetailScreen
 import com.example.app.screens.TasksScreen
 import com.example.app.push.Push
 import com.example.app.push.ensurePushRegistration
+import com.example.app.push.setAppBadge
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 
@@ -202,6 +203,10 @@ fun App() {
             while (true) {
                 pendingInteractions = runCatching { api.pendingInteractions(current.token).size }
                     .getOrDefault(pendingInteractions)
+                // The icon says the same thing the drawer does. Without this the badge only ever
+                // changes when the next notification arrives, so answering everything leaves the
+                // icon insisting there is still something to answer.
+                setAppBadge(pendingInteractions)
                 activeRuns = runCatching { api.runBoard(current.token).active.size }
                     .getOrDefault(activeRuns)
                 delay(INTERACTIONS_BADGE_POLL_MS)

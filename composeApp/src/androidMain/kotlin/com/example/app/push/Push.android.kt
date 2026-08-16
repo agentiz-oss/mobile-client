@@ -90,3 +90,6 @@ fun routeFromIntent(intent: Intent?): Map<String, String> {
         }
     }
 }
+
+/** Android has no app-owned badge: the launcher derives one from the notifications themselves. */
+actual fun setAppBadge(count: Int) = Unit

@@ -108,6 +108,19 @@ fun pushRouteFrom(data: Map<String, String>): PushRoute? {
 }
 
 /**
+ * Sets the number the launcher draws on the app icon.
+ *
+ * The server puts a badge count into every notification, which means the number is only ever
+ * corrected when the *next* one arrives — answer every question and the icon keeps claiming they
+ * are open until something else is asked. So the app owns the badge too, from the same count the
+ * drawer already polls; the push value is then just what the number is between two polls.
+ *
+ * A no-op wherever the platform has no such thing (Android draws its own from the notifications,
+ * desktop and browser have none).
+ */
+expect fun setAppBadge(count: Int)
+
+/**
  * Asks the OS for permission to notify and for this install's push token, handing the result to
  * [Push.deliverToken]. Called once a session exists — a permission prompt before the user has even
  * signed in is a prompt about nothing.
