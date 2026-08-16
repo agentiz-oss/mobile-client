@@ -80,6 +80,32 @@ data class LogEntryDto(
     val createdAt: String? = null,
 )
 
+/** Counters of a stored diff, as the server computed them at write time. */
+@Serializable
+data class DiffStatsDto(
+    val files: Int = 0,
+    val insertions: Int = 0,
+    val deletions: Int = 0,
+)
+
+/**
+ * What the run changed: a unified git patch plus the metadata the «Изменения» section renders.
+ * The server resolves the dashboard's `proposal ? latestDiff : diff` choice before answering, so
+ * this is always the revision a reviewer would look at.
+ */
+@Serializable
+data class DiffDto(
+    /** Unified git patch — what UnifiedPatchParser consumes. Null only for ops-only diffs. */
+    val patch: String? = null,
+    /** The patch was cut at the server's size cap — warn, but parse what arrived anyway. */
+    val truncated: Boolean = false,
+    val stats: DiffStatsDto? = null,
+    val baseSha: String? = null,
+    /** Null while the change is still held in Agentiz; set once it reached the repository. */
+    val appliedAt: String? = null,
+    val appliedCommitSha: String? = null,
+)
+
 /** The most recent pipeline run of a task: what it concluded and how far it got. */
 @Serializable
 data class RunDto(
@@ -116,6 +142,11 @@ data class RunDto(
     val pendingInteractions: Int = 0,
     /** Newest log line of a live run — what a board row shows instead of the whole trace. */
     val lastLog: LogEntryDto? = null,
+    /**
+     * What this run changed in code, when it changed anything. Defaulted so a cached run saved
+     * before this field existed — and an older server that never sends it — both deserialize.
+     */
+    val diff: DiffDto? = null,
 )
 
 /**

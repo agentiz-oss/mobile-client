@@ -119,6 +119,19 @@ fun ForwardIcon(tint: Color, size: Dp = IconSize) {
     }
 }
 
+/** A down-pointing chevron — [ForwardIcon] turned onto rows that expand in place. */
+@Composable
+fun DownIcon(tint: Color, size: Dp = IconSize) {
+    Icon(size) { s ->
+        val path = Path().apply {
+            moveTo(s.x(0.2f), s.y(0.38f))
+            lineTo(s.x(0.5f), s.y(0.68f))
+            lineTo(s.x(0.8f), s.y(0.38f))
+        }
+        drawPath(path, tint, style = s.stroke)
+    }
+}
+
 /**
  * A cog for settings: a ring with eight teeth struck through it.
  *

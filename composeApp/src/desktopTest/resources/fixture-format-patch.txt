@@ -1,0 +1,138 @@
+From f836dec5d911ed7af71464ba839d92960ad31223 Mon Sep 17 00:00:00 2001
+From: Sizyi Ivan <xziy88@gmail.com>
+Date: Sun, 16 Aug 2026 21:53:18 +0700
+Subject: [PATCH] Let the app own its icon badge
+MIME-Version: 1.0
+Content-Type: text/plain; charset=UTF-8
+Content-Transfer-Encoding: 8bit
+
+The badge came only from the notification payload, so the number was
+corrected exactly when the next push arrived: answering every question
+left the icon still claiming they were open, which is what it did after
+the first real delivery.
+
+It is now set from the same pending count the drawer already polls every
+15 seconds — one source of truth, and the pushed value is simply what the
+number is between two polls. iOS is the only platform that has such a
+badge to own: Android's launcher derives one from the notifications
+themselves, desktop and browser have none.
+
+applicationIconBadgeNumber rather than setBadgeCount, which needs iOS 16
+while this target deploys to 15.
+
+Co-Authored-By: Claude Opus 5 <noreply@anthropic.com>
+---
+ .../kotlin/com/example/app/push/Push.android.kt   |  3 +++
+ .../src/commonMain/kotlin/com/example/app/App.kt  |  5 +++++
+ .../kotlin/com/example/app/push/Push.kt           | 13 +++++++++++++
+ .../kotlin/com/example/app/push/Push.desktop.kt   |  3 +++
+ .../kotlin/com/example/app/push/Push.ios.kt       | 15 +++++++++++++++
+ .../kotlin/com/example/app/push/Push.wasmJs.kt    |  3 +++
+ 6 files changed, 42 insertions(+)
+
+diff --git a/composeApp/src/androidMain/kotlin/com/example/app/push/Push.android.kt b/composeApp/src/androidMain/kotlin/com/example/app/push/Push.android.kt
+index a4f1b0b..4588b3a 100644
+--- a/composeApp/src/androidMain/kotlin/com/example/app/push/Push.android.kt
++++ b/composeApp/src/androidMain/kotlin/com/example/app/push/Push.android.kt
+@@ -90,3 +90,6 @@ fun routeFromIntent(intent: Intent?): Map<String, String> {
+         }
+     }
+ }
++
++/** Android has no app-owned badge: the launcher derives one from the notifications themselves. */
++actual fun setAppBadge(count: Int) = Unit
+diff --git a/composeApp/src/commonMain/kotlin/com/example/app/App.kt b/composeApp/src/commonMain/kotlin/com/example/app/App.kt
+index 82a29e1..a6c40c3 100644
+--- a/composeApp/src/commonMain/kotlin/com/example/app/App.kt
++++ b/composeApp/src/commonMain/kotlin/com/example/app/App.kt
+@@ -27,6 +27,7 @@ import com.example.app.screens.TaskDetailScreen
+ import com.example.app.screens.TasksScreen
+ import com.example.app.push.Push
+ import com.example.app.push.ensurePushRegistration
++import com.example.app.push.setAppBadge
+ import kotlinx.coroutines.delay
+ import kotlinx.coroutines.launch
+ 
+@@ -202,6 +203,10 @@ fun App() {
+             while (true) {
+                 pendingInteractions = runCatching { api.pendingInteractions(current.token).size }
+                     .getOrDefault(pendingInteractions)
++                // The icon says the same thing the drawer does. Without this the badge only ever
++                // changes when the next notification arrives, so answering everything leaves the
++                // icon insisting there is still something to answer.
++                setAppBadge(pendingInteractions)
+                 activeRuns = runCatching { api.runBoard(current.token).active.size }
+                     .getOrDefault(activeRuns)
+                 delay(INTERACTIONS_BADGE_POLL_MS)
+diff --git a/composeApp/src/commonMain/kotlin/com/example/app/push/Push.kt b/composeApp/src/commonMain/kotlin/com/example/app/push/Push.kt
+index 0e63fcb..f214f0b 100644
+--- a/composeApp/src/commonMain/kotlin/com/example/app/push/Push.kt
++++ b/composeApp/src/commonMain/kotlin/com/example/app/push/Push.kt
+@@ -107,6 +107,19 @@ fun pushRouteFrom(data: Map<String, String>): PushRoute? {
+     )
+ }
+ 
++/**
++ * Sets the number the launcher draws on the app icon.
++ *
++ * The server puts a badge count into every notification, which means the number is only ever
++ * corrected when the *next* one arrives — answer every question and the icon keeps claiming they
++ * are open until something else is asked. So the app owns the badge too, from the same count the
++ * drawer already polls; the push value is then just what the number is between two polls.
++ *
++ * A no-op wherever the platform has no such thing (Android draws its own from the notifications,
++ * desktop and browser have none).
++ */
++expect fun setAppBadge(count: Int)
++
+ /**
+  * Asks the OS for permission to notify and for this install's push token, handing the result to
+  * [Push.deliverToken]. Called once a session exists — a permission prompt before the user has even
+diff --git a/composeApp/src/desktopMain/kotlin/com/example/app/push/Push.desktop.kt b/composeApp/src/desktopMain/kotlin/com/example/app/push/Push.desktop.kt
+index 65d69b0..b5e10eb 100644
+--- a/composeApp/src/desktopMain/kotlin/com/example/app/push/Push.desktop.kt
++++ b/composeApp/src/desktopMain/kotlin/com/example/app/push/Push.desktop.kt
+@@ -2,3 +2,6 @@ package com.example.app.push
+ 
+ /** No push on the desktop build: the questions screen polls, which is what it did before any of this. */
+ actual fun ensurePushRegistration() = Unit
++
++/** No badge on desktop, as there are no notifications either. */
++actual fun setAppBadge(count: Int) = Unit
+diff --git a/composeApp/src/iosMain/kotlin/com/example/app/push/Push.ios.kt b/composeApp/src/iosMain/kotlin/com/example/app/push/Push.ios.kt
+index cbda827..9590e37 100644
+--- a/composeApp/src/iosMain/kotlin/com/example/app/push/Push.ios.kt
++++ b/composeApp/src/iosMain/kotlin/com/example/app/push/Push.ios.kt
+@@ -36,3 +36,18 @@ actual fun ensurePushRegistration() {
+         }
+     }
+ }
++
++/**
++ * iOS draws the badge from a number the app owns, not from the notifications on screen — clearing
++ * the notification centre does not clear it, and neither does answering the question it was about.
++ *
++ * `applicationIconBadgeNumber` rather than `setBadgeCount` on purpose: the latter arrived in iOS 16
++ * and this target still deploys to 15. It is a member property of UIApplication — unlike
++ * `registerForRemoteNotifications` above, which is a category and needs its own import. UIKit is
++ * main-thread only, and this runs on whatever dispatcher the polling coroutine happens to be on.
++ */
++actual fun setAppBadge(count: Int) {
++    dispatch_async(dispatch_get_main_queue()) {
++        UIApplication.sharedApplication.applicationIconBadgeNumber = count.toLong()
++    }
++}
+diff --git a/composeApp/src/wasmJsMain/kotlin/com/example/app/push/Push.wasmJs.kt b/composeApp/src/wasmJsMain/kotlin/com/example/app/push/Push.wasmJs.kt
+index c409bdf..f4bb805 100644
+--- a/composeApp/src/wasmJsMain/kotlin/com/example/app/push/Push.wasmJs.kt
++++ b/composeApp/src/wasmJsMain/kotlin/com/example/app/push/Push.wasmJs.kt
+@@ -5,3 +5,6 @@ package com.example.app.push
+  * a third transport on the server for a target that is only used for trying the app out.
+  */
+ actual fun ensurePushRegistration() = Unit
++
++/** No badge in the browser build. */
++actual fun setAppBadge(count: Int) = Unit
+-- 
+2.43.0
+

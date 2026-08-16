@@ -2,6 +2,7 @@ package com.example.app.screens
 
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -10,19 +11,34 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.selection.SelectionContainer
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.mutableStateMapOf
+import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.text.SpanStyle
+import androidx.compose.ui.text.buildAnnotatedString
+import androidx.compose.ui.text.withStyle
 import androidx.compose.ui.unit.dp
 import com.composeunstyled.Text
+import com.example.app.components.DownIcon
+import com.example.app.components.ForwardIcon
+import com.example.app.data.DiffDto
 import com.example.app.data.InteractionDto
 import com.example.app.data.LogEntryDto
 import com.example.app.data.RunDto
 import com.example.app.data.StageDto
+import com.example.app.diff.DiffPalette
+import com.example.app.diff.DiffViewer
+import com.example.app.diff.FileDiff
+import com.example.app.diff.UnifiedPatchParser
 import com.example.app.theme.AppTheme
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonObject
@@ -112,6 +128,11 @@ internal fun RunResult(
             }
         }
 
+        run.diff?.let { diff ->
+            Spacer(Modifier.height(16.dp))
+            DiffSection(diff)
+        }
+
         val summary = run.resultSummary?.takeIf { it.isNotBlank() }
         if (summary != null) {
             Spacer(Modifier.height(16.dp))
@@ -142,6 +163,112 @@ internal fun RunResult(
         if (failure != null) {
             Spacer(Modifier.height(12.dp))
             Text(text = failure, style = AppTheme.Body, color = AppTheme.Danger)
+        }
+    }
+}
+
+/** The amber the dashboard uses for its "patch truncated" warning; not a theme token yet. */
+private val WarningText = Color(0xFFB45309)
+
+/**
+ * «Изменения» — what the run did to the code, rendered from the same unified patch the dashboard
+ * shows. Wording and badge order follow `AgentizRunDetail.tsx` so the two clients read alike;
+ * what the web has and this deliberately does not: apply/approve buttons (a separate feature with
+ * its own rights) and the unified/split switch (split needs a wide screen).
+ */
+@Composable
+internal fun DiffSection(diff: DiffDto) {
+    // Parsed once per patch, not per recomposition — a live run polls every two seconds.
+    val files = remember(diff.patch) {
+        diff.patch?.let { UnifiedPatchParser.parse(it) } ?: emptyList()
+    }
+    // Files a reader has toggled; anything untouched falls back to "only the first is open", so
+    // a ten-file patch does not unroll into one endless page.
+    val toggled = remember(diff.patch) { mutableStateMapOf<Int, Boolean>() }
+
+    SectionTitle("Изменения")
+    Spacer(Modifier.height(8.dp))
+
+    val stats = diff.stats
+    val fileCount = stats?.files ?: files.size
+    val insertions = stats?.insertions ?: files.sumOf { it.additions }
+    val deletions = stats?.deletions ?: files.sumOf { it.deletions }
+    Text(
+        text = buildAnnotatedString {
+            append("от ${diff.baseSha?.take(12) ?: "—"} · $fileCount файл(ов), ")
+            withStyle(SpanStyle(color = DiffPalette.Light.addedText)) { append("+$insertions") }
+            append(" ")
+            withStyle(SpanStyle(color = DiffPalette.Light.deletedText)) { append("−$deletions") }
+            val appliedAt = formatTimestamp(diff.appliedAt)
+            append(
+                if (appliedAt != null) {
+                    " · применено $appliedAt, коммит ${diff.appliedCommitSha?.take(12) ?: ""}"
+                } else {
+                    " · в репозиторий не отправлено"
+                },
+            )
+        },
+        style = AppTheme.Label,
+        color = AppTheme.Muted,
+    )
+
+    if (diff.truncated) {
+        Spacer(Modifier.height(6.dp))
+        Text(
+            text = "Патч обрезан по лимиту размера — показана часть изменений.",
+            style = AppTheme.Label,
+            color = WarningText,
+        )
+    }
+
+    if (files.isEmpty() && diff.patch != null) {
+        Spacer(Modifier.height(6.dp))
+        Text(text = "Дифф пуст.", style = AppTheme.Label, color = AppTheme.Muted)
+    }
+
+    files.forEachIndexed { index, file ->
+        Spacer(Modifier.height(8.dp))
+        FileDiffCard(
+            file = file,
+            expanded = toggled[index] ?: (index == 0),
+            onToggle = { toggled[index] = !(toggled[index] ?: (index == 0)) },
+        )
+    }
+}
+
+/** One file of the patch: a header that folds the body, so a long patch stays a list of names. */
+@Composable
+private fun FileDiffCard(file: FileDiff, expanded: Boolean, onToggle: () -> Unit) {
+    Column(
+        modifier = Modifier
+            .fillMaxWidth()
+            .clip(RoundedCornerShape(AppTheme.Radius))
+            .border(1.dp, AppTheme.Border, RoundedCornerShape(AppTheme.Radius))
+            .background(AppTheme.Background),
+    ) {
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .clickable(onClick = onToggle)
+                .background(AppTheme.Surface)
+                .padding(horizontal = 10.dp, vertical = 8.dp),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            if (expanded) DownIcon(AppTheme.Muted, size = 14.dp) else ForwardIcon(AppTheme.Muted, size = 14.dp)
+            Text(
+                text = file.path,
+                style = AppTheme.Label,
+                color = AppTheme.Foreground,
+                modifier = Modifier.weight(1f).padding(horizontal = 8.dp),
+            )
+            Text(text = "+${file.additions}", style = AppTheme.Label, color = DiffPalette.Light.addedText)
+            Spacer(Modifier.width(6.dp))
+            Text(text = "−${file.deletions}", style = AppTheme.Label, color = DiffPalette.Light.deletedText)
+        }
+        if (expanded) {
+            SelectionContainer {
+                DiffViewer(file, modifier = Modifier.padding(vertical = 2.dp))
+            }
         }
     }
 }
