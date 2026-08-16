@@ -75,28 +75,34 @@ for ProMotion displays; without it iOS caps the app at 60Hz.
 
 ## Push notifications
 
-The app registers for plain APNs — no Firebase, no CocoaPods. `AppDelegate` in
-`iosApp/iosApp/iOSApp.swift` hands the device token and any tapped notification
-to the shared Kotlin `Push` object; the server signs its own APNs requests with
-a `.p8` key (`AGENTIZ_APNS_*` in the mobile API layer).
+The app registers through **Firebase Cloud Messaging** — the FCM token goes to
+`POST /devices`, and Google talks to APNs on the server's behalf. `AppDelegate`
+in `iosApp/iosApp/iOSApp.swift` hands the FCM token and any tapped notification
+to the shared Kotlin `Push` object.
 
-Two things are not in the repository and have to be set in Xcode / the developer
-portal:
+What has to be in place, and what each part is for:
 
-- the **Push Notifications** capability on the `iosApp` target, which is what
-  puts `aps-environment` into the entitlements. Without it
-  `registerForRemoteNotifications` fails with "no valid aps-entitlement string".
-- an APNs **key** (Keys → new key with APNs enabled) — the `.p8` goes to the
-  *server*, not into the app.
+- `iosApp/iosApp/iosApp.entitlements` (Release) and `iosAppDebug.entitlements`
+  (Debug), wired in via `CODE_SIGN_ENTITLEMENTS`. This is what puts
+  `aps-environment` into the signed binary. Without it
+  `registerForRemoteNotifications` fails with "no valid aps-environment
+  entitlement string", Firebase never receives an APNs token, no FCM token is
+  minted, and the app never calls `POST /devices` — a silent failure that looks
+  like undelivered pushes and is not one.
+- an App ID with **Push Notifications** enabled and a provisioning profile for
+  it. A wildcard profile (`5K5GDFV386.*`) does not carry the capability. With the
+  entitlements above, a profile that lacks it now fails the *build* rather than
+  producing an app that installs and never registers.
+- `GoogleService-Info.plist` in the target (gitignored; CI writes it from
+  `GOOGLE_SERVICE_INFO_PLIST_BASE64`), and the **FirebaseMessaging** package,
+  which the project already declares.
+- an APNs `.p8` uploaded to the *Firebase console* — not to the server, which
+  holds no Apple credentials any more.
 
-The wildcard provisioning profile used above (`5K5GDFV386.*`) does **not** carry
-the push entitlement. A build meant to receive notifications needs an explicit
-App ID with Push Notifications enabled and a profile for it; the wildcard build
-still installs and runs, it simply never registers.
-
-Development builds talk to Apple's sandbox, so the server must run with
-`AGENTIZ_APNS_ENV=sandbox` for them — a sandbox token addressed at the
-production host comes back as `BadDeviceToken`.
+Debug and Release differ only in which entitlements file they use, and nothing on
+the server depends on that: Firebase resolves the environment from the
+registration itself, so a build run from Xcode and a TestFlight build work side
+by side with no setting to match them.
 
 ## Local changes this required
 

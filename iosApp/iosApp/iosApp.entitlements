@@ -1,0 +1,19 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+	<!--
+	  What actually puts the Push Notifications capability into the signed binary. Without it
+	  registerForRemoteNotifications() fails with "no valid aps-environment entitlement string",
+	  no APNs token reaches Firebase, no FCM token is ever minted, and the app simply never calls
+	  POST /devices — which looks exactly like a delivery problem and is not one.
+
+	  Release, and therefore TestFlight and the App Store, uses `production`; the Debug variant
+	  next to this file uses `development` for builds run from Xcode. The provisioning profile has
+	  to allow the capability too: signing fails outright if the App ID does not have Push
+	  Notifications enabled, which is the loud half of this pair.
+	-->
+	<key>aps-environment</key>
+	<string>production</string>
+</dict>
+</plist>

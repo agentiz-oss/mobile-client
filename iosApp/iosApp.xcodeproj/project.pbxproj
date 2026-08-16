@@ -23,6 +23,8 @@
 		1A0000000000000000000043 /* Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist.xml; path = Info.plist; sourceTree = "<group>"; };
 		1A0000000000000000000044 /* Config.xcconfig */ = {isa = PBXFileReference; lastKnownFileType = text.xcconfig; path = Config.xcconfig; sourceTree = "<group>"; };
 		1A0000000000000000000045 /* GoogleService-Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist.xml; path = "GoogleService-Info.plist"; sourceTree = "<group>"; };
+		1A0000000000000000000046 /* iosApp.entitlements */ = {isa = PBXFileReference; lastKnownFileType = text.plist.entitlements; path = iosApp.entitlements; sourceTree = "<group>"; };
+		1A0000000000000000000047 /* iosAppDebug.entitlements */ = {isa = PBXFileReference; lastKnownFileType = text.plist.entitlements; path = iosAppDebug.entitlements; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -63,6 +65,8 @@
 				1A0000000000000000000042 /* Assets.xcassets */,
 				1A0000000000000000000043 /* Info.plist */,
 				1A0000000000000000000045 /* GoogleService-Info.plist */,
+				1A0000000000000000000046 /* iosApp.entitlements */,
+				1A0000000000000000000047 /* iosAppDebug.entitlements */,
 			);
 			path = iosApp;
 			sourceTree = "<group>";
@@ -302,6 +306,7 @@
 			buildSettings = {
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
 				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
+				CODE_SIGN_ENTITLEMENTS = iosApp/iosAppDebug.entitlements;
 				CODE_SIGN_STYLE = Automatic;
 				CURRENT_PROJECT_VERSION = 1;
 				DEVELOPMENT_ASSET_PATHS = "";
@@ -333,6 +338,7 @@
 			buildSettings = {
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
 				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
+				CODE_SIGN_ENTITLEMENTS = iosApp/iosApp.entitlements;
 				CODE_SIGN_STYLE = Automatic;
 				CURRENT_PROJECT_VERSION = 1;
 				DEVELOPMENT_ASSET_PATHS = "";
