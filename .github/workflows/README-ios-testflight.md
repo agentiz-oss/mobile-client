@@ -30,6 +30,7 @@ It runs on every push to `main` and can be started manually
 | `APP_STORE_CONNECT_API_KEY_ID` | Key ID of an App Store Connect API key (role: App Manager) |
 | `APP_STORE_CONNECT_ISSUER_ID` | Issuer ID shown on the same App Store Connect page |
 | `APP_STORE_CONNECT_API_KEY_BASE64` | `base64 -i AuthKey_XXXXXX.p8` |
+| `GOOGLE_SERVICE_INFO_PLIST_BASE64` | `base64 -i GoogleService-Info.plist` — the Firebase iOS config, which is gitignored and so cannot come from the checkout. Push needs it: the app links FirebaseMessaging and `FirebaseApp.configure()` traps at launch without it |
 | `KEYCHAIN_PASSWORD` | Optional. A random password is generated when unset |
 
 On macOS use `base64 -i <file> | pbcopy` to produce the values (no line breaks).
