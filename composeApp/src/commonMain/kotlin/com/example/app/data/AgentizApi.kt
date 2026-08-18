@@ -205,6 +205,22 @@ class AgentizApi(baseUrl: String = platformDefaultBaseUrl()) {
             setBody(CreateCommentRequest(body = body))
         }.decodeOrThrow<CommentResponse>().data
 
+    /**
+     * Every worker of the installation with the harness limits it runs under. Not scoped to the
+     * caller's projects — a worker belongs to the deployment, and "почему ничего не идёт" cannot be
+     * asked from a project's side.
+     */
+    suspend fun workers(token: String): List<WorkerDto> =
+        client.get("$root/workers") {
+            bearerAuth(token)
+        }.decodeOrThrow<WorkersResponse>().data
+
+    /** The same limits seen from the accounts they belong to, with the workers spending each one. */
+    suspend fun harnessSubscriptions(token: String): List<HarnessSubscriptionDto> =
+        client.get("$root/subscriptions") {
+            bearerAuth(token)
+        }.decodeOrThrow<SubscriptionsResponse>().data
+
     /** Releases the underlying engine; call when the client is no longer needed. */
     fun close() = client.close()
 

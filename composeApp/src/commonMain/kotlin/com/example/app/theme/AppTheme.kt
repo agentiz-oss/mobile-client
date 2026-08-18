@@ -29,6 +29,13 @@ object AppTheme {
      */
     val MenuBackground: Color = Color(0xFFF4F4F5)
     val Danger: Color = Color(0xFFDC2626)
+
+    /**
+     * The step before [Danger]: a limit that is filling up but has not closed anything. Amber
+     * rather than a lighter red, so "скоро кончится" and "кончилось" are not the same signal read
+     * at two brightnesses.
+     */
+    val Warning: Color = Color(0xFFD97706)
     val Disabled: Color = Color(0xFFA1A1AA)
 
     /**

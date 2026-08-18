@@ -309,6 +309,108 @@ data class CreateCommentRequest(
     val body: String,
 )
 
+/**
+ * One limit window of a harness subscription — a 5-hour or weekly bucket for a Claude/Codex plan,
+ * whatever the provider happens to call it. Everything is optional because the shape is *abstract*:
+ * the server passes through whatever the provider reported, and a window with no `usedPercent` is
+ * one whose provider gives a reset time but no number, not an error.
+ */
+@Serializable
+data class HarnessWindowDto(
+    val key: String = "",
+    val label: String? = null,
+    val usedPercent: Double? = null,
+    val resetsAt: String? = null,
+    val observedAt: String? = null,
+    val source: String? = null,
+)
+
+/** The account a limit actually belongs to, as shown on a worker's harness row. */
+@Serializable
+data class HarnessSubscriptionRefDto(
+    val id: String,
+    val name: String,
+    val provider: String? = null,
+    val authKind: String? = null,
+    val exhausted: Boolean = false,
+    val exhaustedUntil: String? = null,
+    val exhaustedReason: String? = null,
+)
+
+/**
+ * One harness available on one worker. [state] is decided by the server (`available`, `exhausted`,
+ * `disabled`) and is the only thing the UI colours by — "исчерпан" is a gate the server closed, not
+ * something re-derived here out of the percentages.
+ */
+@Serializable
+data class WorkerHarnessDto(
+    val id: String,
+    val harnessKey: String,
+    val enabled: Boolean = true,
+    val state: String = "available",
+    val maxConcurrent: Int? = null,
+    val runningJobs: Int = 0,
+    val queuedJobs: Int = 0,
+    val accountMismatch: Boolean = false,
+    val observedAt: String? = null,
+    val subscription: HarnessSubscriptionRefDto? = null,
+    val windows: List<HarnessWindowDto> = emptyList(),
+)
+
+/** A worker machine with the harnesses bound to it. */
+@Serializable
+data class WorkerDto(
+    val id: String,
+    val name: String,
+    val status: String = "active",
+    val contactState: String = "never_contacted",
+    val lastSeenAt: String? = null,
+    val version: String? = null,
+    val hostname: String? = null,
+    val maxConcurrentJobs: Int = 1,
+    val timezone: String? = null,
+    val harnesses: List<WorkerHarnessDto> = emptyList(),
+)
+
+@Serializable
+data class WorkersResponse(val data: List<WorkerDto> = emptyList())
+
+/** A worker seen from the subscription it spends — the reverse of [WorkerHarnessDto]. */
+@Serializable
+data class SubscriptionWorkerDto(
+    val id: String,
+    val name: String,
+    val harnessKey: String = "",
+    val enabled: Boolean = true,
+    val contactState: String = "never_contacted",
+    val runningJobs: Int = 0,
+)
+
+/**
+ * A provider account with its limits. This is what actually runs out — two workers signed into one
+ * account exhaust together — which is why the app shows it as its own tab and not only as a line on
+ * each worker.
+ */
+@Serializable
+data class HarnessSubscriptionDto(
+    val id: String,
+    val name: String,
+    val provider: String? = null,
+    val authKind: String? = null,
+    val notes: String? = null,
+    val accountId: String? = null,
+    val exhausted: Boolean = false,
+    val exhaustedUntil: String? = null,
+    val exhaustedReason: String? = null,
+    val lastSignalAt: String? = null,
+    val lastSignalSource: String? = null,
+    val windows: List<HarnessWindowDto> = emptyList(),
+    val workers: List<SubscriptionWorkerDto> = emptyList(),
+)
+
+@Serializable
+data class SubscriptionsResponse(val data: List<HarnessSubscriptionDto> = emptyList())
+
 /** Error envelope every endpoint uses on failure: `{ "message": "..." }`. */
 @Serializable
 data class ErrorResponse(

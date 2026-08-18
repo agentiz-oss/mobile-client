@@ -25,6 +25,7 @@ import com.example.app.screens.RunsScreen
 import com.example.app.screens.SettingsScreen
 import com.example.app.screens.TaskDetailScreen
 import com.example.app.screens.TasksScreen
+import com.example.app.screens.WorkersScreen
 import com.example.app.push.Push
 import com.example.app.push.ensurePushRegistration
 import com.example.app.push.setAppBadge
@@ -73,6 +74,13 @@ private sealed interface Destination {
     data class Runs(val from: Destination) : Destination
 
     /**
+     * The machines the work runs on and the harness limits they run under. Installation-wide, like
+     * [Runs] — a worker belongs to the deployment, not to a project — so it only carries where it
+     * was opened from.
+     */
+    data class Workers(val from: Destination) : Destination
+
+    /**
      * The two pages behind the drawer's footer icons. Each carries where it was opened from so
      * back returns there rather than dumping the user on the project list — they are reachable
      * from anywhere, so there is no one place "back" could otherwise mean.
@@ -96,6 +104,7 @@ private fun Destination.project(): ProjectDto? = when (this) {
     is Destination.Agent -> from.project()
     is Destination.Interactions -> from.project()
     is Destination.Runs -> from.project()
+    is Destination.Workers -> from.project()
     is Destination.Settings -> from.project()
     is Destination.Profile -> from.project()
 }
@@ -259,6 +268,13 @@ fun App() {
         )
         add(
             MenuEntry(
+                label = "Воркеры",
+                onClick = { destination = Destination.Workers(destination) },
+                enabled = destination !is Destination.Workers,
+            ),
+        )
+        add(
+            MenuEntry(
                 label = "Агент",
                 onClick = ::openAgent,
                 enabled = destination !is Destination.Agent,
@@ -349,6 +365,14 @@ fun App() {
                     from = where,
                 )
             },
+        )
+
+        is Destination.Workers -> WorkersScreen(
+            session = current,
+            menu = menu,
+            onBack = { destination = where.from },
+            onOpenSettings = { destination = Destination.Settings(where) },
+            onOpenProfile = { destination = Destination.Profile(where) },
         )
 
         is Destination.Agent -> AgentDashboardScreen(
