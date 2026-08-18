@@ -338,7 +338,8 @@ internal fun InteractionCard(
         if (deadline != null) {
             Spacer(Modifier.height(12.dp))
             // The run is cancelled when this passes, so it is a consequence, not a footnote.
-            Text(text = "Ответ ждут до $deadline", style = AppTheme.Label, color = AppTheme.Muted)
+            val left = formatRemaining(interaction.expiresAt)?.let { " (осталось $it)" } ?: ""
+            Text(text = "Ответ ждут до $deadline$left", style = AppTheme.Label, color = AppTheme.Muted)
         }
 
         if (missing.isNotEmpty()) {

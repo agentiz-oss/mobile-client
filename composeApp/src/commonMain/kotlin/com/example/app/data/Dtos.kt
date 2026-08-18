@@ -17,7 +17,18 @@ data class UserDto(
     val login: String,
     val fullName: String? = null,
     val email: String? = null,
+    /** IANA name from the admin profile; display-only, the offset below is what gets applied. */
+    val timezone: String? = null,
+    /**
+     * The profile timezone's offset from UTC in minutes, computed by the server at login/restore.
+     * The app has no timezone database, so every timestamp it renders is UTC plus this number.
+     */
+    val utcOffsetMinutes: Int? = null,
 )
+
+/** Response of GET /auth/me. */
+@Serializable
+data class MeResponse(val user: UserDto)
 
 /** Response of POST /auth/login. */
 @Serializable

@@ -501,7 +501,8 @@ private fun WindowRow(window: HarnessWindowDto) {
         window.resetsAt?.let { resetsAt ->
             formatTimestamp(resetsAt)?.let { at ->
                 Spacer(Modifier.height(4.dp))
-                Text(text = "Обновится $at", style = AppTheme.Label, color = AppTheme.Muted)
+                val left = formatRemaining(resetsAt)?.let { " (осталось $it)" } ?: ""
+                Text(text = "Обновится $at$left", style = AppTheme.Label, color = AppTheme.Muted)
             }
         }
     }
@@ -543,7 +544,10 @@ private fun usageColor(percent: Double) = when {
 private fun ExhaustedNote(until: String, reason: String?) {
     Text(
         text = listOfNotNull(
-            formatTimestamp(until)?.let { "Лимит закрыт до $it" } ?: "Лимит закрыт",
+            formatTimestamp(until)?.let {
+                val left = formatRemaining(until)?.let { left -> " (осталось $left)" } ?: ""
+                "Лимит закрыт до $it$left"
+            } ?: "Лимит закрыт",
             reason?.takeIf { it.isNotBlank() },
         ).joinToString(" — "),
         style = AppTheme.Label,

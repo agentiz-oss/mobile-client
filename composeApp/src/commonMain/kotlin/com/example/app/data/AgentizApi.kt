@@ -47,6 +47,15 @@ class AgentizApi(baseUrl: String = platformDefaultBaseUrl()) {
         }.decodeOrThrow()
 
     /**
+     * The token's user as the server sees it *now* — most importantly a fresh timezone offset:
+     * the stored session keeps the offset from login day, and DST or a profile edit moves it.
+     */
+    suspend fun me(token: String): UserDto =
+        client.get("$root/auth/me") {
+            bearerAuth(token)
+        }.decodeOrThrow<MeResponse>().user
+
+    /**
      * Mints a short-lived, one-use WebView URL for the Agentiz Assistant.
      *
      * The mobile bearer token is used only for this exchange.  Loading the returned URL lets the

@@ -370,19 +370,3 @@ internal fun SectionTitle(text: String) {
     Text(text = text, style = AppTheme.Label, color = AppTheme.Muted)
 }
 
-/**
- * `createdAt`/`startedAt` come from the server as ISO-8601 UTC (`2026-08-05T14:32:10Z`); this turns
- * that into `05.08.2026 14:32` for display without pulling in a datetime dependency for one field.
- * Lexical ISO-8601 order is chronological order, which the timeline below also relies on to sort
- * runs and comments against each other without parsing either into a real timestamp.
- */
-internal fun formatTimestamp(iso: String?): String? {
-    if (iso.isNullOrBlank()) return null
-    val datePart = iso.substringBefore('T', missingDelimiterValue = "")
-    val timePart = iso.substringAfter('T', missingDelimiterValue = "")
-    val dateBits = datePart.split('-')
-    if (dateBits.size != 3) return null
-    val (year, month, day) = dateBits
-    val time = timePart.take(5)
-    return "$day.$month.$year $time"
-}

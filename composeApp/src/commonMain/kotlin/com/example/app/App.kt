@@ -25,6 +25,7 @@ import com.example.app.screens.RunsScreen
 import com.example.app.screens.SettingsScreen
 import com.example.app.screens.TaskDetailScreen
 import com.example.app.screens.TasksScreen
+import com.example.app.screens.ViewerTime
 import com.example.app.screens.WorkersScreen
 import com.example.app.push.Push
 import com.example.app.push.ensurePushRegistration
@@ -147,6 +148,9 @@ fun App() {
     }
 
     val current = session
+    // Every timestamp the screens render shifts by the signed-in user's timezone offset; reset on
+    // logout so the login screen era shows plain UTC rather than the previous user's zone.
+    ViewerTime.utcOffsetMinutes = current?.user?.utcOffsetMinutes
     if (current == null) {
         LoginScreen(onLoggedIn = {
             saveSession(it)
@@ -163,6 +167,18 @@ fun App() {
     // Push, in both directions. Asking for the token only once someone is signed in keeps the
     // permission prompt away from the login screen, where it would be a prompt about nothing.
     LaunchedEffect(current.token) { ensurePushRegistration() }
+
+    // Refresh who we are on every (re)start: the stored session carries the timezone offset from
+    // login day, and DST or a profile edit moves it. Failure is silent — the stale copy still works.
+    LaunchedEffect(current.token, current.serverUrl) {
+        runCatching { AgentizApi(current.serverUrl).me(current.token) }.onSuccess { fresh ->
+            val updated = current.copy(user = fresh)
+            if (updated != current) {
+                saveSession(updated)
+                session = updated
+            }
+        }
+    }
 
     val registration by Push.registration.collectAsState()
     LaunchedEffect(registration, current.token, current.serverUrl) {
