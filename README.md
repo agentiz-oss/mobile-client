@@ -132,10 +132,24 @@ picks up.
 
 ### Push notifications
 
-A question is worth nothing until someone sees it, so the server pushes one as soon as an agent
-stops to ask: Android through FCM, iOS straight through APNs (no Firebase SDK on iOS — the app
-registers its raw APNs token). Tapping the notification opens the **Вопросы** screen with that
-question pulled to the top, from a cold start as well as from the background.
+The server pushes every feed event the notification policy lets through: a question an agent
+stopped on, a review waiting, a failed push, a finished run. Payload routing is by `type`
+(`push/Push.kt`): `type=interaction` opens the **Вопросы** screen with that question pulled to the
+top — the legacy shape, kept so old builds keep working; `type=activity` opens the run the event
+belongs to when the payload names one (`taskId` + `runId`), and the **Активности** feed otherwise.
+Both work from a cold start as well as from the background.
+
+Android notification channels (registered in `push/Push.android.kt`, chosen by the server per event
+type) double as a free coarse filter — the OS settings can mute a whole kind without touching the
+server policy:
+
+- `agentiz-interactions` — questions (high importance);
+- `agentiz-actions` — reviews, held diffs, failed pushes (high);
+- `agentiz-failures` — failed runs (default);
+- `agentiz-results` — successes and other quiet news (low; the server sends these silent).
+
+The finer per-type × per-project policy is edited on the **Настройки** screen
+(`PUT /notification-policy`); the feed itself is written server-side whatever is muted.
 
 - The token is registered with `POST /devices` right after sign-in, and again whenever the OS
   refreshes it. Signing out calls `DELETE /devices`, so a shared phone stops receiving the previous
@@ -144,6 +158,8 @@ question pulled to the top, from a cold start as well as from the background.
   to notify about.
 - If the question was already answered elsewhere by the time the notification is tapped, the screen
   fetches it by id and shows how it ended instead of an empty list.
+- The icon badge is the server's actionable count (questions + reviews + held diffs, minus muted
+  projects), polled by the app itself so acting on things clears it between two pushes.
 
 **Android** needs `composeApp/google-services.json` from the Firebase console. Without it the build
 still works — the Google Services plugin is applied only when the file is present, and the app runs

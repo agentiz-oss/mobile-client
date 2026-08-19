@@ -422,6 +422,199 @@ data class HarnessSubscriptionDto(
 @Serializable
 data class SubscriptionsResponse(val data: List<HarnessSubscriptionDto> = emptyList())
 
+/**
+ * One row of the activity feed — the immutable "что произошло" journal. The server writes it for
+ * every event whatever the notification policy silences, so this list is also the answer to
+ * "почему не пришёл пуш".
+ */
+@Serializable
+data class ActivityDto(
+    val id: String,
+    val type: String,
+    /** `action_required` or `info` — what the row is coloured by. */
+    val kind: String = "info",
+    val projectId: String = "",
+    val projectName: String? = null,
+    val runId: String? = null,
+    val taskId: String? = null,
+    val taskTitle: String? = null,
+    val proposalId: String? = null,
+    val interactionId: String? = null,
+    val title: String = "",
+    val body: String = "",
+    val data: JsonObject? = null,
+    val createdAt: String? = null,
+)
+
+/** One feed page. [nextBefore] is the opaque cursor of the next (older) page, or null at the end. */
+@Serializable
+data class ActivitiesPageDto(
+    val items: List<ActivityDto> = emptyList(),
+    val nextBefore: String? = null,
+)
+
+@Serializable
+data class ActivitiesResponse(val data: ActivitiesPageDto = ActivitiesPageDto())
+
+/** A pending question, as the summary endpoint compresses it. */
+@Serializable
+data class SummaryInteractionDto(
+    val id: String,
+    val runId: String = "",
+    val projectId: String = "",
+    val taskId: String? = null,
+    val taskTitle: String? = null,
+    val message: String = "",
+    val createdAt: String? = null,
+    val expiresAt: String? = null,
+)
+
+/** A proposal somebody has to approve/reject/retry, as the summary endpoint compresses it. */
+@Serializable
+data class SummaryProposalDto(
+    val id: String,
+    val status: String = "waiting_review",
+    val revision: Int = 1,
+    val projectId: String = "",
+    val taskId: String = "",
+    val taskTitle: String? = null,
+    val runId: String = "",
+    val targetBranch: String? = null,
+    val commitMessage: String? = null,
+    val lastError: String? = null,
+    val updatedAt: String? = null,
+)
+
+/** A repository run whose diff `requireApproval` holds in Agentiz. */
+@Serializable
+data class SummaryHeldRunDto(
+    val runId: String,
+    val projectId: String = "",
+    val taskId: String = "",
+    val taskTitle: String? = null,
+    val diffId: String? = null,
+    val operations: Int = 0,
+    val finishedAt: String? = null,
+)
+
+/**
+ * Everything actionable right now plus the unseen-feed counter — one request instead of four
+ * polls, and [actionableCount] is the number the app badge shows.
+ */
+@Serializable
+data class ActivitySummaryDto(
+    val interactions: List<SummaryInteractionDto> = emptyList(),
+    val proposals: List<SummaryProposalDto> = emptyList(),
+    val heldRuns: List<SummaryHeldRunDto> = emptyList(),
+    val actionableCount: Int = 0,
+    val unseen: Int = 0,
+)
+
+@Serializable
+data class ActivitySummaryResponse(val data: ActivitySummaryDto = ActivitySummaryDto())
+
+/** Body of POST /activities/seen; an omitted [at] means "now". */
+@Serializable
+data class MarkSeenRequest(val at: String? = null)
+
+@Serializable
+data class MarkSeenResponse(val data: JsonObject? = null)
+
+/** A workspace proposal in full, as GET /proposals returns it. */
+@Serializable
+data class ProposalDto(
+    val id: String,
+    val status: String = "waiting_review",
+    val revision: Int = 1,
+    val projectId: String = "",
+    val projectName: String? = null,
+    val taskId: String = "",
+    val taskTitle: String? = null,
+    val runId: String = "",
+    val runStatus: String? = null,
+    val holding: Boolean = false,
+    val targetMode: String = "current",
+    val targetBranch: String? = null,
+    val commitMessage: String? = null,
+    /** Whether approve is possible at all for this revision — the server's verdict, not ours. */
+    val approvable: Boolean = false,
+    val diff: ProposalDiffDto? = null,
+    val lastError: String? = null,
+    val pushedCommitSha: String? = null,
+    val updatedAt: String? = null,
+    val createdAt: String? = null,
+)
+
+@Serializable
+data class ProposalDiffDto(
+    val id: String,
+    val operations: Int = 0,
+    val stats: DiffStatsDto? = null,
+    val truncated: Boolean = false,
+)
+
+@Serializable
+data class ProposalsResponse(val data: List<ProposalDto> = emptyList())
+
+@Serializable
+data class ProposalResponse(val data: ProposalDto)
+
+/** Body of POST /proposals/{id}/approve. Edits are optional; the stored ones apply when omitted. */
+@Serializable
+data class ApproveProposalRequest(
+    val revision: Int,
+    val targetBranch: String? = null,
+    val commitMessage: String? = null,
+)
+
+/** Body of POST /proposals/{id}/reject. */
+@Serializable
+data class RejectProposalRequest(val revision: Int)
+
+/** One event type of the notification-policy matrix, as the server catalogues it. */
+@Serializable
+data class ActivityTypeInfoDto(
+    val type: String,
+    val kind: String = "info",
+    val label: String = "",
+)
+
+/** The built-in delivery default of one type — the tail of every policy resolution. */
+@Serializable
+data class PolicyChannelsDto(
+    val push: String = "on",
+    val dashboard: String = "on",
+)
+
+/**
+ * The notification policy as this owner sees it: `defaults` and the caller's own project/pipeline
+ * scopes. Scopes stay [JsonObject]s on purpose — a scope mixes `mute: true` with per-type entries,
+ * and the editor manipulates it structurally (see NotificationPolicyDoc) rather than through a
+ * rigid DTO that would drop unknown keys on the way back.
+ */
+@Serializable
+data class NotificationPolicyDto(
+    val defaults: JsonObject = JsonObject(emptyMap()),
+    val projects: JsonObject = JsonObject(emptyMap()),
+    val pipelines: JsonObject = JsonObject(emptyMap()),
+    /** `environment` | `settings` | `unset` — env shadows the stored document entirely. */
+    val source: String = "unset",
+    val shadowedByEnvironment: Boolean = false,
+    val builtinDefaults: Map<String, PolicyChannelsDto> = emptyMap(),
+    val types: List<ActivityTypeInfoDto> = emptyList(),
+)
+
+@Serializable
+data class NotificationPolicyResponse(val data: NotificationPolicyDto = NotificationPolicyDto())
+
+/** Body of PUT /notification-policy: replaces `defaults` and the caller's own entries. */
+@Serializable
+data class UpdateNotificationPolicyRequest(
+    val defaults: JsonObject? = null,
+    val projects: JsonObject? = null,
+    val pipelines: JsonObject? = null,
+)
+
 /** Error envelope every endpoint uses on failure: `{ "message": "..." }`. */
 @Serializable
 data class ErrorResponse(

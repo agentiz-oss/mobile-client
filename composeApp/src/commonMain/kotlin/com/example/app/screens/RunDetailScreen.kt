@@ -24,7 +24,7 @@ import com.example.app.data.AgentizApi
 import com.example.app.data.ApiException
 import com.example.app.data.InteractionDto
 import com.example.app.data.LocalStore
-import com.example.app.data.RunDto
+import com.example.app.data.ProposalDto
 import com.example.app.data.Session
 import com.example.app.theme.AppTheme
 import kotlinx.coroutines.delay
@@ -60,6 +60,11 @@ fun RunDetailScreen(
     var error by remember { mutableStateOf<String?>(null) }
     var reloadKey by remember { mutableStateOf(0) }
     var answeringId by remember { mutableStateOf<String?>(null) }
+    // The run's workspace proposal, when one still needs a decision. Fetched beside the run rather
+    // than embedded in it: the proposal moves on its own (an approve from the dashboard, a worker
+    // finishing the push), and the actionable list is the endpoint that already knows the answer.
+    var proposal by remember { mutableStateOf<ProposalDto?>(null) }
+    var decisionBusy by remember { mutableStateOf(false) }
     val scope = rememberCoroutineScope()
 
     suspend fun load() {
@@ -67,11 +72,33 @@ fun RunDetailScreen(
             val loaded = api.run(session.token, taskId, runId)
             run = loaded
             LocalStore.saveRun(loaded)
+            proposal = runCatching { api.proposals(session.token).firstOrNull { it.runId == runId } }
+                .getOrDefault(proposal)
             error = null
         } catch (e: ApiException) {
             error = e.message
         } catch (e: Throwable) {
             error = "Ошибка сети: ${e.message ?: "неизвестная ошибка"}"
+        }
+    }
+
+    /** Sends one decision; a 409 (stale revision, somebody was faster) surfaces and a reload follows either way. */
+    fun decide(call: suspend () -> Unit) {
+        if (decisionBusy) return
+        decisionBusy = true
+        scope.launch {
+            try {
+                call()
+                proposal = null
+                error = null
+            } catch (e: ApiException) {
+                error = e.message
+            } catch (e: Throwable) {
+                error = "Ошибка сети: ${e.message ?: "неизвестная ошибка"}"
+            } finally {
+                decisionBusy = false
+                load()
+            }
         }
     }
 
@@ -135,6 +162,19 @@ fun RunDetailScreen(
                 if (error != null) {
                     Text(text = error!!, style = AppTheme.Label, color = AppTheme.Danger)
                     Spacer(Modifier.height(12.dp))
+                }
+                proposal?.let { pending ->
+                    ProposalReviewSection(
+                        proposal = pending,
+                        busy = decisionBusy,
+                        onApprove = { revision, targetBranch, commitMessage ->
+                            decide { api.approveProposal(session.token, pending.id, revision, targetBranch, commitMessage) }
+                        },
+                        onReject = { revision ->
+                            decide { api.rejectProposal(session.token, pending.id, revision) }
+                        },
+                    )
+                    Spacer(Modifier.height(24.dp))
                 }
                 RunResult(
                     run = current,

@@ -23,15 +23,24 @@ import com.google.firebase.messaging.FirebaseMessaging
 /** Must match `android.notification.channelId` in the server's FCM payload, or O+ drops the push. */
 const val INTERACTIONS_CHANNEL_ID = "agentiz-interactions"
 
+/** Reviews, held diffs, failed pushes — actionable, but not a parked agent. */
+const val ACTIONS_CHANNEL_ID = "agentiz-actions"
+
+/** Failed runs. Their own channel so "уведомляй только о падениях" is one OS toggle away. */
+const val FAILURES_CHANNEL_ID = "agentiz-failures"
+
+/** Successes and other quiet news — low importance, the server sends these silent by default. */
+const val RESULTS_CHANNEL_ID = "agentiz-results"
+
 private var permissionRequest: (() -> Unit)? = null
 
 /**
  * Wires the activity into push. Called from `onCreate`, before the first composition: the
  * permission launcher has to be registered while the activity is still being created, and the
- * channel has to exist before any notification can be shown against it.
+ * channels have to exist before any notification can be shown against them.
  */
 fun attachPushHost(activity: ComponentActivity) {
-    createInteractionsChannel(activity)
+    createNotificationChannels(activity)
     val launcher = activity.registerForActivityResult(ActivityResultContracts.RequestPermission()) { granted ->
         // Denied is a normal answer, not an error: the questions screen and its badge still work,
         // they just stop announcing themselves.
@@ -48,7 +57,12 @@ fun attachPushHost(activity: ComponentActivity) {
     }
 }
 
-fun createInteractionsChannel(context: Context) {
+/**
+ * One channel per kind of news, matching the server's `androidChannel` catalogue
+ * (`app-agentiz/lib/notifications/activityTypes.ts`). The OS settings then double as a free coarse
+ * filter — muting "Результаты" on the phone needs no server round trip.
+ */
+fun createNotificationChannels(context: Context) {
     if (Build.VERSION.SDK_INT < Build.VERSION_CODES.O) return
     val manager = context.getSystemService(NotificationManager::class.java) ?: return
     manager.createNotificationChannel(
@@ -59,6 +73,34 @@ fun createInteractionsChannel(context: Context) {
             NotificationManager.IMPORTANCE_HIGH,
         ).apply {
             description = "Агент остановился и ждёт ответа"
+        },
+    )
+    manager.createNotificationChannel(
+        NotificationChannel(
+            ACTIONS_CHANNEL_ID,
+            "Требуют действия",
+            NotificationManager.IMPORTANCE_HIGH,
+        ).apply {
+            description = "Ревью изменений, удержанные диффы, сбои push"
+        },
+    )
+    manager.createNotificationChannel(
+        NotificationChannel(
+            FAILURES_CHANNEL_ID,
+            "Ошибки запусков",
+            NotificationManager.IMPORTANCE_DEFAULT,
+        ).apply {
+            description = "Запуск завершился с ошибкой"
+        },
+    )
+    manager.createNotificationChannel(
+        NotificationChannel(
+            RESULTS_CHANNEL_ID,
+            "Результаты",
+            // Low: the server sends successes silent on purpose; the channel matches.
+            NotificationManager.IMPORTANCE_LOW,
+        ).apply {
+            description = "Успешные запуски и прочие тихие события"
         },
     )
 }

@@ -6,16 +6,32 @@ import kotlinx.coroutines.flow.StateFlow
 /**
  * Where a tapped notification wants the app to go.
  *
- * Only the id is required: everything else is context the payload carries so the question's screen
- * can be drawn before the first request comes back — and the app stays able to open a question it
- * knows nothing else about.
+ * Two kinds travel today. [Question] is the legacy `type=interaction` payload — an agent stopped
+ * and waits, the app opens that question. [Activity] is everything else the server announces
+ * (`type=activity`): a review waiting, a failed push, a finished run — the app opens the run it
+ * belongs to when the payload names one, and the activities feed otherwise.
+ *
+ * Only the ids are required: the rest is context the payload carries so the target screen can be
+ * drawn before the first request comes back.
  */
-data class PushRoute(
-    val interactionId: String,
-    val projectId: String? = null,
-    val projectName: String? = null,
-    val taskId: String? = null,
-)
+sealed interface PushRoute {
+    data class Question(
+        val interactionId: String,
+        val projectId: String? = null,
+        val projectName: String? = null,
+        val taskId: String? = null,
+    ) : PushRoute
+
+    data class Activity(
+        val activityType: String,
+        val activityId: String? = null,
+        val runId: String? = null,
+        val taskId: String? = null,
+        val projectId: String? = null,
+        val projectName: String? = null,
+        val proposalId: String? = null,
+    ) : PushRoute
+}
 
 /** The address this install is reachable at, as the OS handed it over: an FCM token, either platform. */
 data class PushRegistration(val token: String, val platform: String)
@@ -36,7 +52,7 @@ object Push {
     private val _route = MutableStateFlow<PushRoute?>(null)
     private val _registration = MutableStateFlow<PushRegistration?>(null)
 
-    /** The question a notification asked to open, until [consumeRoute] takes it. */
+    /** The destination a notification asked to open, until [consumeRoute] takes it. */
     val route: StateFlow<PushRoute?> = _route
 
     /** The push token to register with the server, once there is a session to register it under. */
@@ -58,6 +74,9 @@ object Push {
         projectId: String?,
         projectName: String?,
         taskId: String?,
+        activityType: String? = null,
+        activityId: String? = null,
+        runId: String? = null,
     ) {
         deliverRoute(
             buildMap {
@@ -66,6 +85,9 @@ object Push {
                 projectId?.let { put(KEY_PROJECT, it) }
                 projectName?.let { put(KEY_PROJECT_NAME, it) }
                 taskId?.let { put(KEY_TASK, it) }
+                activityType?.let { put(KEY_ACTIVITY_TYPE, it) }
+                activityId?.let { put(KEY_ACTIVITY_ID, it) }
+                runId?.let { put(KEY_RUN, it) }
             },
         )
     }
@@ -86,34 +108,54 @@ object Push {
     internal const val KEY_PROJECT = "projectId"
     internal const val KEY_PROJECT_NAME = "projectName"
     internal const val KEY_TASK = "taskId"
+    internal const val KEY_ACTIVITY_TYPE = "activityType"
+    internal const val KEY_ACTIVITY_ID = "activityId"
+    internal const val KEY_RUN = "runId"
+    internal const val KEY_PROPOSAL = "proposalId"
 }
 
 /**
  * Reads a notification payload as a destination, or nothing.
  *
- * Deliberately strict about `type`: the same channel will carry other kinds of message eventually,
- * and a payload this function does not understand has to leave the app where it is rather than
- * navigate somewhere half-built.
+ * Deliberately strict about `type`: a payload this function does not understand has to leave the
+ * app where it is rather than navigate somewhere half-built — which is also the soft-degradation
+ * contract with older servers and newer payload kinds alike.
  */
 fun pushRouteFrom(data: Map<String, String>): PushRoute? {
-    if (data[Push.KEY_TYPE] != "interaction") return null
-    val interactionId = data[Push.KEY_INTERACTION]?.trim().orEmpty()
-    if (interactionId.isEmpty()) return null
-    return PushRoute(
-        interactionId = interactionId,
-        projectId = data[Push.KEY_PROJECT]?.takeIf { it.isNotBlank() },
-        projectName = data[Push.KEY_PROJECT_NAME]?.takeIf { it.isNotBlank() },
-        taskId = data[Push.KEY_TASK]?.takeIf { it.isNotBlank() },
-    )
+    fun field(key: String): String? = data[key]?.trim()?.takeIf { it.isNotEmpty() }
+    return when (data[Push.KEY_TYPE]) {
+        "interaction" -> {
+            val interactionId = field(Push.KEY_INTERACTION) ?: return null
+            PushRoute.Question(
+                interactionId = interactionId,
+                projectId = field(Push.KEY_PROJECT),
+                projectName = field(Push.KEY_PROJECT_NAME),
+                taskId = field(Push.KEY_TASK),
+            )
+        }
+        "activity" -> {
+            val activityType = field(Push.KEY_ACTIVITY_TYPE) ?: return null
+            PushRoute.Activity(
+                activityType = activityType,
+                activityId = field(Push.KEY_ACTIVITY_ID),
+                runId = field(Push.KEY_RUN),
+                taskId = field(Push.KEY_TASK),
+                projectId = field(Push.KEY_PROJECT),
+                projectName = field(Push.KEY_PROJECT_NAME),
+                proposalId = field(Push.KEY_PROPOSAL),
+            )
+        }
+        else -> null
+    }
 }
 
 /**
  * Sets the number the launcher draws on the app icon.
  *
  * The server puts a badge count into every notification, which means the number is only ever
- * corrected when the *next* one arrives — answer every question and the icon keeps claiming they
- * are open until something else is asked. So the app owns the badge too, from the same count the
- * drawer already polls; the push value is then just what the number is between two polls.
+ * corrected when the *next* one arrives — act on everything and the icon keeps claiming there is
+ * work. So the app owns the badge too, from the same actionable count the drawer already polls;
+ * the push value is then just what the number is between two polls.
  *
  * A no-op wherever the platform has no such thing (Android draws its own from the notifications,
  * desktop and browser have none).

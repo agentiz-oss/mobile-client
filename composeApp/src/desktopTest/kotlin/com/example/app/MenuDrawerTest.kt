@@ -119,7 +119,9 @@ class MenuDrawerTest {
         onNodeWithContentDescription("Настройки").performClick()
         waitForIdle()
 
-        onNodeWithText("Настройки появятся позже").assertIsDisplayed()
+        // The page title is the stable landmark: the body itself is the notification matrix, which
+        // needs a server this test deliberately does not have.
+        onNodeWithText("Настройки").assertIsDisplayed()
         // The drawer let go on the way through, rather than being left over the page it opened.
         onNodeWithText("Меню").assertDoesNotExist()
     }

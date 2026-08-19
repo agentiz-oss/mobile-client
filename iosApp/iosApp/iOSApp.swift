@@ -86,7 +86,10 @@ class AppDelegate: NSObject, UIApplicationDelegate, UNUserNotificationCenterDele
             interactionId: userInfo["interactionId"] as? String,
             projectId: userInfo["projectId"] as? String,
             projectName: userInfo["projectName"] as? String,
-            taskId: userInfo["taskId"] as? String
+            taskId: userInfo["taskId"] as? String,
+            activityType: userInfo["activityType"] as? String,
+            activityId: userInfo["activityId"] as? String,
+            runId: userInfo["runId"] as? String
         )
     }
 }

@@ -7,6 +7,7 @@ import io.ktor.client.request.bearerAuth
 import io.ktor.client.request.delete
 import io.ktor.client.request.get
 import io.ktor.client.request.post
+import io.ktor.client.request.put
 import io.ktor.client.request.setBody
 import io.ktor.client.statement.HttpResponse
 import io.ktor.http.ContentType
@@ -229,6 +230,93 @@ class AgentizApi(baseUrl: String = platformDefaultBaseUrl()) {
         client.get("$root/subscriptions") {
             bearerAuth(token)
         }.decodeOrThrow<SubscriptionsResponse>().data
+
+    /**
+     * One page of the activity feed, newest first. [before] is the `nextBefore` cursor of the
+     * previous page; null starts from the top.
+     */
+    suspend fun activities(token: String, before: String? = null, limit: Int? = null): ActivitiesPageDto =
+        client.get("$root/activities") {
+            bearerAuth(token)
+            url {
+                before?.let { parameters.append("before", it) }
+                limit?.let { parameters.append("limit", it.toString()) }
+            }
+        }.decodeOrThrow<ActivitiesResponse>().data
+
+    /**
+     * Everything actionable right now (questions, reviews, held diffs) plus the unseen counter —
+     * the drawer badge, the app badge and the activities screen's top section, in one request.
+     */
+    suspend fun activitySummary(token: String): ActivitySummaryDto =
+        client.get("$root/activities/summary") {
+            bearerAuth(token)
+        }.decodeOrThrow<ActivitySummaryResponse>().data
+
+    /** "Ленту видел" — moves the per-user mark the unseen badge counts against. */
+    suspend fun markActivitiesSeen(token: String) {
+        client.post("$root/activities/seen") {
+            bearerAuth(token)
+            contentType(ContentType.Application.Json)
+            setBody(MarkSeenRequest())
+        }.decodeOrThrow<MarkSeenResponse>()
+    }
+
+    /** Workspace proposals of the user's projects that need a decision (or hold a directory). */
+    suspend fun proposals(token: String, holding: Boolean = false): List<ProposalDto> =
+        client.get("$root/proposals") {
+            bearerAuth(token)
+            if (holding) url { parameters.append("holding", "true") }
+        }.decodeOrThrow<ProposalsResponse>().data
+
+    /**
+     * Approves one proposal revision: the pinned worker commits and pushes the reviewed diff. A
+     * stale revision or a status that moved on comes back as an [ApiException] with HTTP 409 —
+     * refetch and let the user look again, the server never applies a decision to something they
+     * did not see.
+     */
+    suspend fun approveProposal(
+        token: String,
+        proposalId: String,
+        revision: Int,
+        targetBranch: String? = null,
+        commitMessage: String? = null,
+    ): ProposalDto =
+        client.post("$root/proposals/$proposalId/approve") {
+            bearerAuth(token)
+            contentType(ContentType.Application.Json)
+            setBody(ApproveProposalRequest(revision = revision, targetBranch = targetBranch, commitMessage = commitMessage))
+        }.decodeOrThrow<ProposalResponse>().data
+
+    /** Rejects one proposal revision: the worker resets the workspace and drops the reservation. */
+    suspend fun rejectProposal(token: String, proposalId: String, revision: Int): ProposalDto =
+        client.post("$root/proposals/$proposalId/reject") {
+            bearerAuth(token)
+            contentType(ContentType.Application.Json)
+            setBody(RejectProposalRequest(revision = revision))
+        }.decodeOrThrow<ProposalResponse>().data
+
+    /** The notification policy, cut down to the caller's projects and their pipelines. */
+    suspend fun notificationPolicy(token: String): NotificationPolicyDto =
+        client.get("$root/notification-policy") {
+            bearerAuth(token)
+        }.decodeOrThrow<NotificationPolicyResponse>().data
+
+    /**
+     * Replaces `defaults` and the caller's own project/pipeline entries; entries of other owners
+     * survive untouched on the server. Last-write-wins between two simultaneous editors.
+     */
+    suspend fun updateNotificationPolicy(
+        token: String,
+        defaults: JsonObject? = null,
+        projects: JsonObject? = null,
+        pipelines: JsonObject? = null,
+    ): NotificationPolicyDto =
+        client.put("$root/notification-policy") {
+            bearerAuth(token)
+            contentType(ContentType.Application.Json)
+            setBody(UpdateNotificationPolicyRequest(defaults = defaults, projects = projects, pipelines = pipelines))
+        }.decodeOrThrow<NotificationPolicyResponse>().data
 
     /** Releases the underlying engine; call when the client is no longer needed. */
     fun close() = client.close()
