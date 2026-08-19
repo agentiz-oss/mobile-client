@@ -38,6 +38,7 @@ import com.example.app.data.ApiException
 import com.example.app.data.RunBoardDto
 import com.example.app.data.RunDto
 import com.example.app.data.Session
+import com.example.app.markdown.markdownToPlainText
 import com.example.app.theme.AppTheme
 import kotlinx.coroutines.delay
 
@@ -231,7 +232,8 @@ private fun RunBoardCard(
         if (tail != null) {
             Spacer(Modifier.height(8.dp))
             Text(
-                text = tail,
+                // A capped preview of agent text: the markup comes off instead of being rendered.
+                text = markdownToPlainText(tail),
                 style = AppTheme.Body,
                 color = if (!live && run.errorMessage?.isNotBlank() == true) AppTheme.Danger else AppTheme.Muted,
                 maxLines = 3,

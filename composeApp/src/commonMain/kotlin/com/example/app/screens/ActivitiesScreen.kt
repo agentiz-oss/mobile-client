@@ -40,6 +40,7 @@ import com.example.app.data.ActivitySummaryDto
 import com.example.app.data.AgentizApi
 import com.example.app.data.ApiException
 import com.example.app.data.Session
+import com.example.app.markdown.markdownToPlainText
 import com.example.app.theme.AppTheme
 import kotlinx.coroutines.launch
 
@@ -264,7 +265,14 @@ private fun ActionableCard(
             )
         }
         Spacer(Modifier.height(6.dp))
-        Text(text = body, style = AppTheme.Body, color = AppTheme.Muted, maxLines = 3, overflow = TextOverflow.Ellipsis)
+        // Clipped to three lines, so the markup is taken off rather than rendered.
+        Text(
+            text = markdownToPlainText(body),
+            style = AppTheme.Body,
+            color = AppTheme.Muted,
+            maxLines = 3,
+            overflow = TextOverflow.Ellipsis,
+        )
         timestamp?.let {
             Spacer(Modifier.height(6.dp))
             Text(text = formatTimestamp(it) ?: it, style = AppTheme.Label, color = AppTheme.Muted)
@@ -311,7 +319,13 @@ private fun ActivityCard(activity: ActivityDto, onClick: (() -> Unit)?) {
         }
         if (activity.body.isNotBlank() && activity.body != activity.title) {
             Spacer(Modifier.height(4.dp))
-            Text(text = activity.body, style = AppTheme.Label, color = AppTheme.Muted, maxLines = 2, overflow = TextOverflow.Ellipsis)
+            Text(
+                text = markdownToPlainText(activity.body),
+                style = AppTheme.Label,
+                color = AppTheme.Muted,
+                maxLines = 2,
+                overflow = TextOverflow.Ellipsis,
+            )
         }
     }
 }

@@ -25,6 +25,7 @@ import com.composeunstyled.Text
 import com.example.app.components.AppButton
 import com.example.app.components.AppTextField
 import com.example.app.data.InteractionDto
+import com.example.app.markdown.MarkdownText
 import com.example.app.theme.AppTheme
 import kotlinx.serialization.json.JsonArray
 import kotlinx.serialization.json.JsonElement
@@ -311,7 +312,9 @@ internal fun InteractionCard(
         }
 
         Spacer(Modifier.height(12.dp))
-        Text(text = interaction.message, style = AppTheme.Body, color = AppTheme.Foreground)
+        // Agents ask in Markdown — a list of options, a path in backticks — so the question is
+        // rendered as such rather than shown with its punctuation.
+        MarkdownText(text = interaction.message, style = AppTheme.Body, color = AppTheme.Foreground)
 
         fields.forEach { field ->
             Spacer(Modifier.height(16.dp))
@@ -454,7 +457,8 @@ private fun FieldEditor(
 private fun FieldHint(description: String?) {
     val text = description?.takeIf { it.isNotBlank() } ?: return
     Spacer(Modifier.height(4.dp))
-    Text(text = text, style = AppTheme.Label, color = AppTheme.Muted)
+    // Written by the same agent that wrote the question, in the same Markdown.
+    MarkdownText(text = text, style = AppTheme.Label, color = AppTheme.Muted)
 }
 
 /** A fixed set of answers as tappable pills — used for both `enum` and yes/no. */
@@ -532,7 +536,7 @@ internal fun AnsweredInteractionRow(interaction: InteractionDto) {
             }
         }
         Spacer(Modifier.height(8.dp))
-        Text(text = interaction.message, style = AppTheme.Body, color = AppTheme.Foreground)
+        MarkdownText(text = interaction.message, style = AppTheme.Body, color = AppTheme.Foreground)
     }
 }
 

@@ -30,6 +30,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.text.input.ImeAction
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import com.composeunstyled.Text
 import com.example.app.components.AppButton
@@ -45,6 +46,8 @@ import com.example.app.data.RunDto
 import com.example.app.data.Session
 import com.example.app.data.TaskDetailDto
 import com.example.app.data.TaskDto
+import com.example.app.markdown.MarkdownText
+import com.example.app.markdown.markdownToPlainText
 import com.example.app.theme.AppTheme
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.delay
@@ -490,7 +493,14 @@ private fun RunTimelineRow(
             val summary = run.resultSummary?.takeIf { it.isNotBlank() }
             if (summary != null) {
                 Spacer(Modifier.height(4.dp))
-                Text(text = summary, style = AppTheme.Label, color = AppTheme.Muted, maxLines = 1)
+                // One clipped line: the markup comes off, the blocks stay unrendered.
+                Text(
+                    text = markdownToPlainText(summary),
+                    style = AppTheme.Label,
+                    color = AppTheme.Muted,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                )
             }
         }
         Spacer(Modifier.width(12.dp))
@@ -534,6 +544,6 @@ private fun CommentCard(comment: CommentDto) {
             }
         }
         Spacer(Modifier.height(8.dp))
-        Text(text = comment.body, style = AppTheme.Body, color = AppTheme.Foreground)
+        MarkdownText(text = comment.body, style = AppTheme.Body, color = AppTheme.Foreground)
     }
 }

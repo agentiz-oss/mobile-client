@@ -39,6 +39,7 @@ import com.example.app.diff.DiffPalette
 import com.example.app.diff.DiffViewer
 import com.example.app.diff.FileDiff
 import com.example.app.diff.UnifiedPatchParser
+import com.example.app.markdown.MarkdownText
 import com.example.app.theme.AppTheme
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonObject
@@ -138,7 +139,7 @@ internal fun RunResult(
             Spacer(Modifier.height(16.dp))
             SectionTitle("Итог воркера")
             Spacer(Modifier.height(8.dp))
-            Text(text = summary, style = AppTheme.Body, color = AppTheme.Foreground)
+            MarkdownText(text = summary, style = AppTheme.Body, color = AppTheme.Foreground)
         }
 
         run.workerResult?.let { result ->
@@ -305,7 +306,8 @@ private fun StageRow(stage: StageDto) {
             ?.takeIf { it.isNotBlank() }
         if (response != null) {
             Spacer(Modifier.height(6.dp))
-            Text(text = response, style = AppTheme.Body, color = AppTheme.Foreground)
+            // What the agent said at the end of the stage — its whole report, Markdown and all.
+            MarkdownText(text = response, style = AppTheme.Body, color = AppTheme.Foreground)
         } else if (stage.output != null) {
             Spacer(Modifier.height(6.dp))
             SelectionContainer {
