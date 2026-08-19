@@ -4,6 +4,7 @@ import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.layout.size
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.geometry.CornerRadius
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Color
@@ -279,5 +280,31 @@ fun RefreshIcon(tint: Color, size: Dp = IconSize) {
             lineTo(s.x(0.7f), s.y(0.44f))
         }
         drawPath(head, tint, style = s.stroke)
+    }
+}
+
+/**
+ * Two offset sheets, for "скопировать": the copy sits in front, the original behind it. Drawn as
+ * one full rounded rect plus the visible corner of the sheet behind, rather than two whole rects —
+ * at 16.dp the overlapping halves of two full outlines close into a grid.
+ */
+@Composable
+fun CopyIcon(tint: Color, size: Dp = IconSize) {
+    Icon(size) { s ->
+        drawRoundRect(
+            color = tint,
+            topLeft = s.at(0.32f, 0.32f),
+            size = Size(s.x(0.52f), s.y(0.52f)),
+            cornerRadius = CornerRadius(s.x(0.1f), s.y(0.1f)),
+            style = s.stroke,
+        )
+        val back = Path().apply {
+            moveTo(s.x(0.68f), s.y(0.16f))
+            lineTo(s.x(0.26f), s.y(0.16f))
+            // The elbow of the sheet behind, stopping where the front one covers it.
+            lineTo(s.x(0.16f), s.y(0.26f))
+            lineTo(s.x(0.16f), s.y(0.68f))
+        }
+        drawPath(back, tint, style = s.stroke)
     }
 }

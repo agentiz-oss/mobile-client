@@ -39,9 +39,9 @@ import com.example.app.diff.DiffPalette
 import com.example.app.diff.DiffViewer
 import com.example.app.diff.FileDiff
 import com.example.app.diff.UnifiedPatchParser
+import com.example.app.json.JsonViewer
 import com.example.app.markdown.MarkdownText
 import com.example.app.theme.AppTheme
-import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.contentOrNull
 import kotlinx.serialization.json.jsonPrimitive
@@ -56,8 +56,6 @@ import kotlinx.serialization.json.jsonPrimitive
  * the screen most needs to keep refreshing.
  */
 internal val ACTIVE_RUN_STATES = setOf("pending", "running", "waiting_input")
-
-internal val prettyJson = Json { prettyPrint = true }
 
 /**
  * The full record of one pipeline run: its stages, its log trace and the worker's final answer.
@@ -146,19 +144,10 @@ internal fun RunResult(
             Spacer(Modifier.height(16.dp))
             SectionTitle("Полный ответ воркера")
             Spacer(Modifier.height(8.dp))
-            // Worker result schemas may evolve independently. Display the complete JSON that the
-            // server persisted rather than silently dropping fields the client does not know yet.
-            SelectionContainer {
-                Text(
-                    text = prettyJson.encodeToString(result),
-                    style = AppTheme.Label,
-                    color = AppTheme.Foreground,
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .heightIn(max = 360.dp)
-                        .verticalScroll(rememberScrollState()),
-                )
-            }
+            // Worker result schemas may evolve independently. Show the complete JSON the server
+            // persisted rather than silently dropping fields the client does not know yet — as a
+            // tree, because "complete" here regularly means hundreds of lines.
+            JsonViewer(element = result, rootLabel = "результат")
         }
         val failure = run.errorMessage?.takeIf { it.isNotBlank() }
         if (failure != null) {
@@ -310,13 +299,8 @@ private fun StageRow(stage: StageDto) {
             MarkdownText(text = response, style = AppTheme.Body, color = AppTheme.Foreground)
         } else if (stage.output != null) {
             Spacer(Modifier.height(6.dp))
-            SelectionContainer {
-                Text(
-                    text = prettyJson.encodeToString(stage.output),
-                    style = AppTheme.Label,
-                    color = AppTheme.Muted,
-                )
-            }
+            // No prose from the agent — whatever the stage did leave behind, foldable.
+            JsonViewer(element = stage.output, rootLabel = "вывод этапа")
         }
     }
 }
