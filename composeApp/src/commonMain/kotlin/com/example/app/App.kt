@@ -24,6 +24,7 @@ import com.example.app.screens.ProfileScreen
 import com.example.app.screens.ProjectsScreen
 import com.example.app.screens.RunDetailScreen
 import com.example.app.screens.RunsScreen
+import com.example.app.screens.NotificationsScreen
 import com.example.app.screens.SettingsScreen
 import com.example.app.screens.TaskDetailScreen
 import com.example.app.screens.TasksScreen
@@ -97,14 +98,18 @@ private sealed interface Destination {
      */
     data class Settings(val from: Destination) : Destination
     data class Profile(val from: Destination) : Destination
+
+    /** One page of settings, reached from [Settings] — never from the drawer's footer directly. */
+    data class Notifications(val from: Destination) : Destination
 }
 
 /**
  * The project a destination is "in", if any. Settings and Profile inherit it from wherever they
  * were opened, so the drawer keeps offering the project you were last looking at.
  *
- * Non-recursive by construction: neither wrapper is ever built around another, since both are only
- * ever opened from a content screen.
+ * Recursion is bounded and deliberate: Settings and Profile are opened from a content screen, and
+ * Notifications is opened from Settings, so the chain unwinds to a content destination in at most
+ * two hops.
  */
 private fun Destination.project(): ProjectDto? = when (this) {
     is Destination.Projects -> null
@@ -118,6 +123,7 @@ private fun Destination.project(): ProjectDto? = when (this) {
     is Destination.Workers -> from.project()
     is Destination.Settings -> from.project()
     is Destination.Profile -> from.project()
+    is Destination.Notifications -> from.project()
 }
 
 /**
@@ -461,10 +467,20 @@ fun App() {
         // second copy of it — tapping "Настройки" from settings should do nothing, not deepen the
         // back stack by one indistinguishable screen.
         is Destination.Settings -> SettingsScreen(
-            session = current,
             menu = menu,
             onBack = { destination = where.from },
             onOpenSettings = {},
+            onOpenProfile = { destination = Destination.Profile(where.from) },
+            onOpenNotifications = { destination = Destination.Notifications(where) },
+        )
+
+        // Back returns to the settings hub it was opened from, while the footer's settings icon
+        // goes there too rather than stacking a second copy of this page under it.
+        is Destination.Notifications -> NotificationsScreen(
+            session = current,
+            menu = menu,
+            onBack = { destination = where.from },
+            onOpenSettings = { destination = where.from },
             onOpenProfile = { destination = Destination.Profile(where.from) },
         )
 

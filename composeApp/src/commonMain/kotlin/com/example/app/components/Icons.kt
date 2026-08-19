@@ -247,6 +247,36 @@ fun CheckIcon(tint: Color, size: Dp = IconSize) {
     }
 }
 
+/**
+ * A bell: notifications. The body is an arch closed by a flat rim with a clapper under it — a
+ * dome alone reads as an umbrella at this size, and the rim is what makes it a bell.
+ */
+@Composable
+fun BellIcon(tint: Color, size: Dp = IconSize, muted: Boolean = false) {
+    Icon(size) { s ->
+        val body = Path().apply {
+            moveTo(s.x(0.24f), s.y(0.66f))
+            lineTo(s.x(0.24f), s.y(0.46f))
+            // The shoulders rise to the crown as one curve, so the arch keeps its weight even when
+            // the glyph is drawn at 14.dp next to a line of text.
+            quadraticTo(s.x(0.5f), s.y(0.12f), s.x(0.76f), s.y(0.46f))
+            lineTo(s.x(0.76f), s.y(0.66f))
+        }
+        drawPath(body, tint, style = s.stroke)
+        line(s, tint, 0.16f, 0.66f, 0.84f, 0.66f)
+        // The clapper, as an arc rather than a dot: a dot under the rim reads as a full stop.
+        val clapper = Path().apply {
+            moveTo(s.x(0.41f), s.y(0.74f))
+            quadraticTo(s.x(0.5f), s.y(0.86f), s.x(0.59f), s.y(0.74f))
+        }
+        drawPath(clapper, tint, style = s.stroke)
+
+        // Muted is the same bell with a slash, not a second glyph: the two states must read as one
+        // thing switched off, which two different shapes never do.
+        if (muted) line(s, tint, 0.18f, 0.82f, 0.82f, 0.18f)
+    }
+}
+
 /** A circled exclamation, for warnings and failed states. */
 @Composable
 fun AlertIcon(tint: Color, size: Dp = IconSize) {
