@@ -117,6 +117,25 @@ data class DiffDto(
     val appliedCommitSha: String? = null,
 )
 
+/**
+ * Token spend as the server reports it: for a run accumulated across every attempt, for a stage
+ * the last attempt (the same shape sits in `stage.output.usage`). `null` — and absent against an
+ * older server or in a run cached by an older build — means "never reported" (old runs, runs that
+ * failed before an agent ran) and must render as nothing, not as zero.
+ */
+@Serializable
+data class RunUsageDto(
+    val totalTokens: Long = 0,
+    val inputTokens: Long = 0,
+    val outputTokens: Long = 0,
+    val cacheReadTokens: Long = 0,
+    val cacheWriteTokens: Long = 0,
+    /** litellm's pricing estimate; on a subscription the real marginal cost is zero. */
+    val estimatedCostUsd: Double? = null,
+    /** Only in the per-stage block: which model the stage actually ran on. */
+    val model: String? = null,
+)
+
 /** The most recent pipeline run of a task: what it concluded and how far it got. */
 @Serializable
 data class RunDto(
@@ -161,6 +180,8 @@ data class RunDto(
      * before this field existed — and an older server that never sends it — both deserialize.
      */
     val diff: DiffDto? = null,
+    /** What this run cost in tokens. Defaulted for the same reason as [diff]. */
+    val usage: RunUsageDto? = null,
 )
 
 /**

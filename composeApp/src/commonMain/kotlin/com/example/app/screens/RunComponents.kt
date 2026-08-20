@@ -125,6 +125,20 @@ internal fun RunResult(
     ) {
         RunStatusBadge(run.status)
 
+        // What the run cost, spelled like the dashboard's run header: total, the in/out/cache
+        // split, and the price estimate when the server computed one.
+        run.usage?.takeIf { totalTokens(it) > 0 }?.let { usage ->
+            Spacer(Modifier.height(10.dp))
+            val parts = buildList {
+                add("${formatTokens(totalTokens(usage))} токенов")
+                add("вход ${formatTokens(usage.inputTokens)}")
+                add("выход ${formatTokens(usage.outputTokens)}")
+                add("кэш ${formatTokens(usage.cacheReadTokens + usage.cacheWriteTokens)}")
+                usage.estimatedCostUsd?.takeIf { it > 0 }?.let { add(formatCostUsd(it)) }
+            }
+            Text(text = parts.joinToString(" · "), style = AppTheme.Label, color = AppTheme.Muted)
+        }
+
         if (run.interactions.isNotEmpty()) {
             Spacer(Modifier.height(16.dp))
             SectionTitle("Вопросы агента")
@@ -330,6 +344,18 @@ private fun StageRow(stage: StageDto) {
                 },
                 style = AppTheme.Label,
                 color = if (stage.status == "failed") AppTheme.Danger else AppTheme.Muted,
+            )
+        }
+
+        // The stage's own spend (last attempt) and the model it actually ran on — the dashboard
+        // shows the same pair beside each stage, from the same `output.usage` block.
+        val usage = remember(stage.output) { stageUsage(stage.output) }
+        if (usage != null && totalTokens(usage) > 0) {
+            Spacer(Modifier.height(4.dp))
+            Text(
+                text = listOfNotNull("${formatTokens(totalTokens(usage))} ткн", usage.model).joinToString(" · "),
+                style = AppTheme.Label,
+                color = AppTheme.Muted,
             )
         }
 

@@ -200,6 +200,7 @@ private fun RunBoardCard(
             run.projectName?.takeIf { it.isNotBlank() },
             run.trigger.takeIf { it.isNotBlank() },
             formatTimestamp(if (live) run.startedAt ?: run.createdAt else run.finishedAt ?: run.createdAt),
+            tokensBadge(run.usage),
         ).joinToString(" · ")
         if (context.isNotBlank()) {
             Spacer(Modifier.height(4.dp))

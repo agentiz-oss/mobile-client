@@ -489,6 +489,10 @@ private fun RunTimelineRow(
                 if (timestamp != null) {
                     Text(text = " · $timestamp", style = AppTheme.Label, color = AppTheme.Muted)
                 }
+                val tokens = tokensBadge(run.usage)
+                if (tokens != null) {
+                    Text(text = " · $tokens", style = AppTheme.Label, color = AppTheme.Muted)
+                }
             }
             val summary = run.resultSummary?.takeIf { it.isNotBlank() }
             if (summary != null) {
