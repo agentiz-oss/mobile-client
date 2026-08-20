@@ -9,7 +9,11 @@ import androidx.compose.ui.test.v2.runComposeUiTest
 import com.example.app.data.DiffDto
 import com.example.app.data.DiffStatsDto
 import com.example.app.data.RunDto
+import com.example.app.platform.deviceUtcOffsetMinutes
 import com.example.app.screens.RunResult
+import com.example.app.screens.ViewerTime
+import kotlin.test.AfterTest
+import kotlin.test.BeforeTest
 import kotlin.test.Test
 
 /**
@@ -17,6 +21,20 @@ import kotlin.test.Test
  * same badges as the dashboard, and unfolds one file at a time so a many-file patch stays a list.
  */
 class DiffSectionTest {
+
+    // "Применено в" is a rendered timestamp, so this suite has a timezone whether it wants one or
+    // not. Pinning both halves of ViewerTime keeps the expected digits off the build machine's zone.
+    @BeforeTest
+    fun pinViewerZone() {
+        ViewerTime.utcOffsetMinutes = 180 // Москва
+        ViewerTime.deviceOffsetMinutes = { 0 }
+    }
+
+    @AfterTest
+    fun resetViewerZone() {
+        ViewerTime.utcOffsetMinutes = null
+        ViewerTime.deviceOffsetMinutes = ::deviceUtcOffsetMinutes
+    }
 
     private val twoFilePatch = listOf(
         "diff --git a/first.kt b/first.kt",
@@ -88,7 +106,8 @@ class DiffSectionTest {
         }
 
         onNodeWithText("Патч обрезан по лимиту размера — показана часть изменений.").assertExists()
-        onNodeWithText("применено 15.08.2026 14:32, коммит deadbeef1234", substring = true).assertExists()
+        // 14:32Z read in the pinned +03:00 — the badge goes through formatTimestamp, not the raw string.
+        onNodeWithText("применено 15.08.2026 17:32, коммит deadbeef1234", substring = true).assertExists()
     }
 
     @OptIn(ExperimentalTestApi::class)

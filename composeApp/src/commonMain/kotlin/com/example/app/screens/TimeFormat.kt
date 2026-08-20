@@ -1,5 +1,6 @@
 package com.example.app.screens
 
+import com.example.app.platform.deviceUtcOffsetMinutes
 import kotlin.time.Clock
 import kotlin.time.ExperimentalTime
 
@@ -7,15 +8,34 @@ import kotlin.time.ExperimentalTime
  * Turning server timestamps into text in the *user's* timezone.
  *
  * Timestamps arrive as ISO-8601 UTC (`2026-08-05T14:32:10Z`) and the app deliberately carries no
- * timezone database: the server sends the profile timezone's UTC offset in minutes with the auth
- * user ([com.example.app.data.UserDto.utcOffsetMinutes]), and this file applies it with plain
- * calendar arithmetic. Lexical ISO order stays chronological, so everything that *sorts* by
- * timestamp keeps using the raw strings — only display goes through here.
+ * timezone database: it works from a UTC offset in minutes and plain calendar arithmetic. Lexical
+ * ISO order stays chronological, so everything that *sorts* by timestamp keeps using the raw
+ * strings — only display goes through here.
  */
 
-/** Session-scoped display offset; set from the signed-in user, null falls back to raw UTC. */
+/**
+ * Which offset the screens render in: the signed-in profile's when the server knows one, otherwise
+ * the offset of this device.
+ *
+ * The device is the fallback rather than raw UTC because the profile timezone
+ * ([com.example.app.data.UserDto.utcOffsetMinutes]) comes from Adminizer's optional `UserAP.timezone`
+ * column, which no panel screen fills in — in practice the server answers null for everyone, and the
+ * app was showing UTC digits beside a phone clock reading something else entirely. The profile still
+ * wins when it is set: the server renders push and bell text in that same zone, and two surfaces of
+ * one deployment disagreeing about what time a run finished is worse than either choice.
+ */
 object ViewerTime {
+    /** The profile's offset, set from the auth user; null when the server does not know one. */
     var utcOffsetMinutes: Int? = null
+
+    /**
+     * How this device's own offset is read — the platform seam, replaced only by tests, which must
+     * not depend on the zone of the machine they run on.
+     */
+    var deviceOffsetMinutes: () -> Int = ::deviceUtcOffsetMinutes
+
+    /** The offset [formatTimestamp] actually applies, resolved fresh at every render. */
+    internal fun offsetMinutes(): Int = utcOffsetMinutes ?: deviceOffsetMinutes()
 }
 
 /** Days since 1970-01-01 for a civil date (Howard Hinnant's days_from_civil). */
@@ -59,14 +79,14 @@ private fun epochMinutes(iso: String): Long? {
 private fun two(value: Int): String = value.toString().padStart(2, '0')
 
 /**
- * `05.08.2026 17:32` — the instant shifted into the user's timezone. With no offset known (older
- * server, signed out) the UTC digits are shown as before, so the function never answers null for
- * a parseable input it previously accepted.
+ * `05.08.2026 17:32` — the instant shifted into the viewer's timezone (see [ViewerTime]). Never
+ * answers null for a parseable input: a string carrying a date but no readable time falls through
+ * to [fallbackTimestamp] and keeps its UTC digits, as it always did.
  */
 internal fun formatTimestamp(iso: String?): String? {
     if (iso.isNullOrBlank()) return null
     val minutes = epochMinutes(iso) ?: return fallbackTimestamp(iso)
-    val shifted = minutes + (ViewerTime.utcOffsetMinutes ?: 0)
+    val shifted = minutes + ViewerTime.offsetMinutes()
     val days = shifted.floorDiv(1440)
     val ofDay = shifted.mod(1440L).toInt()
     val (year, month, day) = civilFromDays(days)

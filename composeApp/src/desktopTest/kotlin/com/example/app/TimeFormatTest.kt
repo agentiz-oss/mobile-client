@@ -1,27 +1,53 @@
 package com.example.app
 
+import com.example.app.platform.deviceUtcOffsetMinutes
 import com.example.app.screens.ViewerTime
 import com.example.app.screens.formatRemaining
 import com.example.app.screens.formatTimestamp
 import kotlin.test.AfterTest
+import kotlin.test.BeforeTest
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertNull
 
 /**
  * The display-time contract: UTC wire timestamps shift by the signed-in user's offset — including
- * across a midnight, a month edge and a negative offset — and a deadline reads as hours-and-minutes
- * left, never as a moment already passed.
+ * across a midnight, a month edge and a negative offset — falling back to the device's own zone
+ * when the server names none, and a deadline reads as hours-and-minutes left, never as a moment
+ * already passed.
+ *
+ * Every case pins [ViewerTime.deviceOffsetMinutes] rather than letting it reach the real platform:
+ * the build machine's zone is not a test input.
  */
 class TimeFormatTest {
+
+    @BeforeTest
+    fun pinDevice() {
+        ViewerTime.deviceOffsetMinutes = { 0 }
+    }
 
     @AfterTest
     fun reset() {
         ViewerTime.utcOffsetMinutes = null
+        ViewerTime.deviceOffsetMinutes = ::deviceUtcOffsetMinutes
     }
 
     @Test
-    fun `without an offset the UTC digits show unchanged`() {
+    fun `with no profile offset the device's own zone is used`() {
+        ViewerTime.utcOffsetMinutes = null
+        ViewerTime.deviceOffsetMinutes = { 420 } // Бангкок
+        assertEquals("05.08.2026 21:32", formatTimestamp("2026-08-05T14:32:10Z"))
+    }
+
+    @Test
+    fun `a profile offset wins over the device's`() {
+        ViewerTime.utcOffsetMinutes = 180 // Москва
+        ViewerTime.deviceOffsetMinutes = { 420 } // …на телефоне, увезённом в Бангкок
+        assertEquals("05.08.2026 17:32", formatTimestamp("2026-08-05T14:32:10Z"))
+    }
+
+    @Test
+    fun `a device in UTC shows the wire digits unchanged`() {
         ViewerTime.utcOffsetMinutes = null
         assertEquals("05.08.2026 14:32", formatTimestamp("2026-08-05T14:32:10Z"))
     }

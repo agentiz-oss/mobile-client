@@ -164,8 +164,9 @@ fun App() {
     }
 
     val current = session
-    // Every timestamp the screens render shifts by the signed-in user's timezone offset; reset on
-    // logout so the login screen era shows plain UTC rather than the previous user's zone.
+    // Every timestamp the screens render shifts by the signed-in user's timezone offset; cleared on
+    // logout so nothing is left rendering in the previous user's zone — with none set the screens
+    // fall back to this device's own offset rather than to UTC.
     ViewerTime.utcOffsetMinutes = current?.user?.utcOffsetMinutes
     if (current == null) {
         LoginScreen(onLoggedIn = {
