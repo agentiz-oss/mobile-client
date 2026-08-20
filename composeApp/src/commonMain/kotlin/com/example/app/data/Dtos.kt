@@ -141,8 +141,11 @@ data class RunDto(
      */
     val interactions: List<InteractionDto> = emptyList(),
     /**
-     * Where the run belongs. Only the cross-project board (`GET /runs`) fills these in — a run
-     * loaded through its own task already knows, so they stay null there.
+     * Where the run belongs. Filled in by the cross-project board (`GET /runs`) and by a single
+     * run's own endpoint, which is reached from the board, the feed and notifications with nothing
+     * but two ids in hand and has to be able to name — and open — the task behind them. Null in
+     * the copy embedded in a task's detail, where the screen already knows, and against a server
+     * that predates this.
      */
     val taskId: String? = null,
     val taskTitle: String? = null,

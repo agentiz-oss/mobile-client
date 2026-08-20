@@ -38,6 +38,10 @@ import kotlinx.serialization.json.JsonObject
  * [runNumber] is passed in from the list the run was opened from purely for the title ("Запуск
  * #3"); the page itself only needs the run's id to load it, so it works just as well reached any
  * other way.
+ *
+ * [onOpenTask] is handed the project the *loaded run* reports, not the one the destination was
+ * built with: a run opened from a notification carries whatever the payload happened to name, and
+ * the task screen it leads to has to be reachable even when that was nothing.
  */
 @Composable
 fun RunDetailScreen(
@@ -49,6 +53,7 @@ fun RunDetailScreen(
     onBack: () -> Unit,
     onOpenSettings: () -> Unit,
     onOpenProfile: () -> Unit,
+    onOpenTask: (projectId: String?, projectName: String?) -> Unit,
 ) {
     val api = remember(session.serverUrl) { AgentizApi(session.serverUrl) }
     DisposableEffect(api) { onDispose { api.close() } }
@@ -163,6 +168,14 @@ fun RunDetailScreen(
                     Text(text = error!!, style = AppTheme.Label, color = AppTheme.Danger)
                     Spacer(Modifier.height(12.dp))
                 }
+                // First on the page, above even a proposal waiting for a decision: reading a run
+                // starts with knowing what it was asked to do, and this is the only line that says.
+                TaskLinkRow(
+                    taskTitle = current.taskTitle,
+                    projectName = current.projectName,
+                    onClick = { onOpenTask(current.projectId, current.projectName) },
+                )
+                Spacer(Modifier.height(16.dp))
                 proposal?.let { pending ->
                     ProposalReviewSection(
                         proposal = pending,

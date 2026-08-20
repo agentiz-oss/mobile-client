@@ -48,7 +48,17 @@ private const val BADGE_POLL_MS = 15_000L
 private sealed interface Destination {
     data object Projects : Destination
     data class Tasks(val project: ProjectDto) : Destination
-    data class Task(val project: ProjectDto, val taskId: String) : Destination
+
+    /**
+     * One task. [from] is set when it was reached sideways — from a run's page rather than from
+     * its project's list — so back retraces that step instead of dropping the reader into a task
+     * list they never opened.
+     */
+    data class Task(
+        val project: ProjectDto,
+        val taskId: String,
+        val from: Destination? = null,
+    ) : Destination
 
     /**
      * One run's own page, opened from its card in the task's history — or from the run board, which
@@ -374,11 +384,14 @@ fun App() {
             session = current,
             taskId = where.taskId,
             menu = menu,
-            onBack = { destination = Destination.Tasks(where.project) },
+            onBack = { destination = where.from ?: Destination.Tasks(where.project) },
             onOpenSettings = openSettings,
             onOpenProfile = openProfile,
+            // `from` is this very task frame, not a rebuilt one: back off the run lands on the
+            // screen it was opened from with its own history intact, and "к задаче" on the run's
+            // page recognises it as somewhere the reader has already been.
             onOpenRun = { run, number ->
-                destination = Destination.Run(where.project, where.taskId, run.id, number)
+                destination = Destination.Run(where.project, where.taskId, run.id, number, from = where)
             },
         )
 
@@ -391,6 +404,29 @@ fun App() {
             onBack = { destination = where.from ?: Destination.Task(where.project, where.taskId) },
             onOpenSettings = openSettings,
             onOpenProfile = openProfile,
+            // Going *back* rather than deeper when the run was opened from this very task: the
+            // reader ends up on the screen they came from, not on a second copy of it stacked
+            // under the run. Everywhere else — the board, the feed, a notification — the task is
+            // new ground and the run stays underneath it.
+            onOpenTask = { projectId, projectName ->
+                val origin = where.from as? Destination.Task
+                destination = if (origin != null && origin.taskId == where.taskId) {
+                    origin
+                } else {
+                    Destination.Task(
+                        // A run opened from a notification can arrive with no project at all —
+                        // the run itself is what knows, and it has been loaded by the time this
+                        // is tapped. Without this the task's own back button leads nowhere.
+                        project = where.project.takeIf { it.id.isNotBlank() }
+                            ?: ProjectDto(
+                                id = projectId.orEmpty(),
+                                name = projectName?.takeIf { it.isNotBlank() } ?: where.project.name,
+                            ),
+                        taskId = where.taskId,
+                        from = where,
+                    )
+                }
+            },
         )
 
         is Destination.Interactions -> InteractionsScreen(

@@ -23,8 +23,10 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.text.SpanStyle
 import androidx.compose.ui.text.buildAnnotatedString
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.text.withStyle
 import androidx.compose.ui.unit.dp
 import com.composeunstyled.Text
@@ -56,6 +58,49 @@ import kotlinx.serialization.json.jsonPrimitive
  * the screen most needs to keep refreshing.
  */
 internal val ACTIVE_RUN_STATES = setOf("pending", "running", "waiting_input")
+
+/**
+ * The task a run belongs to, as the way into it.
+ *
+ * A run reached from the board, the activity feed or a notification is otherwise a dead end:
+ * everything the run itself does not carry — the description the agent was given, the discussion,
+ * the other attempts — lives on the task, and the only route there was the project list.
+ *
+ * [taskTitle] and [projectName] come from the server and are both absent against one that predates
+ * them (and in a run cached by an older build). The row is shown regardless: the destination exists
+ * either way, and only its label is the poorer for it.
+ */
+@Composable
+internal fun TaskLinkRow(taskTitle: String?, projectName: String?, onClick: () -> Unit) {
+    val title = taskTitle?.takeIf { it.isNotBlank() }
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .clip(RoundedCornerShape(AppTheme.Radius))
+            .clickable(role = Role.Button, onClick = onClick)
+            .border(1.dp, AppTheme.Border, RoundedCornerShape(AppTheme.Radius))
+            .background(AppTheme.Surface, RoundedCornerShape(AppTheme.Radius))
+            .padding(horizontal = 16.dp, vertical = 12.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Column(modifier = Modifier.weight(1f).padding(end = 12.dp)) {
+            val context = listOfNotNull(
+                "Задача",
+                projectName?.takeIf { it.isNotBlank() },
+            ).joinToString(" · ")
+            Text(text = context, style = AppTheme.Label, color = AppTheme.Muted)
+            Spacer(Modifier.height(2.dp))
+            Text(
+                text = title ?: "Открыть задачу",
+                style = AppTheme.Body,
+                color = AppTheme.Primary,
+                maxLines = 2,
+                overflow = TextOverflow.Ellipsis,
+            )
+        }
+        ForwardIcon(AppTheme.Muted, size = 14.dp)
+    }
+}
 
 /**
  * The full record of one pipeline run: its stages, its log trace and the worker's final answer.
