@@ -2,6 +2,7 @@ package com.example.app
 
 import com.example.app.platform.deviceUtcOffsetMinutes
 import com.example.app.screens.ViewerTime
+import com.example.app.screens.formatFullSessionWindows
 import com.example.app.screens.formatRemaining
 import com.example.app.screens.formatTimestamp
 import kotlin.test.AfterTest
@@ -100,6 +101,44 @@ class TimeFormatTest {
     fun `a passed deadline yields nothing`() {
         val now = 1_770_000_000_000L
         assertNull(formatRemaining(isoAt(now - 60_000L), nowEpochMillis = now))
+    }
+
+    @Test
+    fun `a weekly window counts the whole sessions left in it`() {
+        val now = 1_770_000_000_000L
+        // Six days and change: 148 h left, of which 29 whole five-hour windows.
+        assertEquals(
+            "29 полных 5-часовых окон",
+            formatFullSessionWindows(isoAt(now + 148 * 3_600_000L), nowEpochMillis = now),
+        )
+    }
+
+    @Test
+    fun `the count agrees with its number`() {
+        val now = 1_770_000_000_000L
+        fun after(hours: Long) = formatFullSessionWindows(isoAt(now + hours * 3_600_000L), nowEpochMillis = now)
+        assertEquals("1 полное 5-часовое окно", after(6))    // 1
+        assertEquals("2 полных 5-часовых окна", after(11))   // 2
+        assertEquals("5 полных 5-часовых окон", after(26))   // 5
+        assertEquals("11 полных 5-часовых окон", after(56))  // 11 — not «11 окно»
+        assertEquals("21 полное 5-часовое окно", after(106)) // 21 — back to окно
+    }
+
+    @Test
+    fun `a session window carries no count of itself`() {
+        val now = 1_770_000_000_000L
+        // Exactly one window left, and anything shorter: the row is the session window itself.
+        assertNull(formatFullSessionWindows(isoAt(now + 5 * 3_600_000L), nowEpochMillis = now))
+        assertNull(formatFullSessionWindows(isoAt(now + 90 * 60_000L), nowEpochMillis = now))
+    }
+
+    @Test
+    fun `no count for a window that has no reset or has passed`() {
+        val now = 1_770_000_000_000L
+        assertNull(formatFullSessionWindows(null, nowEpochMillis = now))
+        assertNull(formatFullSessionWindows("", nowEpochMillis = now))
+        assertNull(formatFullSessionWindows("not-a-date", nowEpochMillis = now))
+        assertNull(formatFullSessionWindows(isoAt(now - 3_600_000L), nowEpochMillis = now))
     }
 
     /** Renders an epoch instant as the ISO-8601 UTC string the server would send. */

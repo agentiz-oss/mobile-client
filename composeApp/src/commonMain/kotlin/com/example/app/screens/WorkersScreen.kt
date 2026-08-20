@@ -501,7 +501,13 @@ private fun WindowRow(window: HarnessWindowDto) {
         window.resetsAt?.let { resetsAt ->
             formatTimestamp(resetsAt)?.let { at ->
                 Spacer(Modifier.height(4.dp))
-                val left = formatRemaining(resetsAt)?.let { " (осталось $it)" } ?: ""
+                // A long window — the weekly one in practice — also says how many whole session
+                // windows are left in it: «осталось 154 ч 12 мин» is not a number anyone can plan
+                // against, and the sessions left in it is what that figure gets read for.
+                val left = formatRemaining(resetsAt)?.let { remaining ->
+                    val sessions = formatFullSessionWindows(resetsAt)?.let { ", ещё $it" } ?: ""
+                    " (осталось $remaining$sessions)"
+                } ?: ""
                 Text(text = "Обновится $at$left", style = AppTheme.Label, color = AppTheme.Muted)
             }
         }

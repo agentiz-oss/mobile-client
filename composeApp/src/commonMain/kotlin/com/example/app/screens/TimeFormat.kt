@@ -101,6 +101,14 @@ private fun fallbackTimestamp(iso: String): String? {
     return "$day.$month.$year ${iso.substringAfter('T', missingDelimiterValue = "").take(5)}"
 }
 
+/** Whole minutes left until a UTC instant; null when it does not parse or has already passed. */
+private fun remainingMinutes(untilIso: String?, nowEpochMillis: Long): Long? {
+    if (untilIso.isNullOrBlank()) return null
+    val until = epochMinutes(untilIso) ?: return null
+    val left = until - nowEpochMillis.floorDiv(60_000)
+    return if (left > 0) left else null
+}
+
 /**
  * `2 ч 15 мин` until the given UTC instant, `45 мин` under an hour, null once it has passed —
  * timezone-free on purpose: a countdown is the same length everywhere.
@@ -110,11 +118,41 @@ internal fun formatRemaining(
     untilIso: String?,
     nowEpochMillis: Long = Clock.System.now().toEpochMilliseconds(),
 ): String? {
-    if (untilIso.isNullOrBlank()) return null
-    val until = epochMinutes(untilIso) ?: return null
-    val left = until - nowEpochMillis.floorDiv(60_000)
-    if (left <= 0) return null
+    val left = remainingMinutes(untilIso, nowEpochMillis) ?: return null
     val hours = left / 60
     val minutes = left % 60
     return if (hours > 0) "$hours ч $minutes мин" else "$minutes мин"
+}
+
+/** Length of a harness session window, mirroring `SESSION_WINDOW_MS` in `lib/harnessAlign.ts`. */
+private const val SESSION_WINDOW_MINUTES = 300L
+
+/**
+ * `30 полных 5-часовых окон` — how many whole session windows still fit before a long limit window
+ * resets. This is the only thing a weekly figure is actually used for: «осталось 154 ч 12 мин» is
+ * a number nobody can plan against, and the count of sessions left in it is.
+ *
+ * Null for a window whose reset is no further out than one session length, which is how the server
+ * decides the same question (`sessionWindowOpen` in `lib/harnessAlign.ts` recognizes a session
+ * window structurally, by its reset landing within W, rather than by a provider's key). So the
+ * 5-hour row never carries a count of itself, and a weekly row down to its last session says
+ * nothing instead of «1 окно» — the plain hours read fine at that scale.
+ */
+@OptIn(ExperimentalTime::class)
+internal fun formatFullSessionWindows(
+    untilIso: String?,
+    nowEpochMillis: Long = Clock.System.now().toEpochMilliseconds(),
+): String? {
+    val left = remainingMinutes(untilIso, nowEpochMillis) ?: return null
+    if (left <= SESSION_WINDOW_MINUTES) return null
+    val windows = left / SESSION_WINDOW_MINUTES
+    return "$windows ${sessionWindowsNoun(windows)}"
+}
+
+/** Russian count agreement: 1 окно, 2–4 окна, 5+ окон — and 11–14 back to окон. */
+private fun sessionWindowsNoun(count: Long): String = when {
+    count % 100L in 11L..14L -> "полных 5-часовых окон"
+    count % 10L == 1L -> "полное 5-часовое окно"
+    count % 10L in 2L..4L -> "полных 5-часовых окна"
+    else -> "полных 5-часовых окон"
 }
