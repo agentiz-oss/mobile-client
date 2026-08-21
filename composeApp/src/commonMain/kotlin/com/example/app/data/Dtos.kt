@@ -284,6 +284,77 @@ data class AttachmentsResponse(val data: List<AttachmentDto> = emptyList())
 @Serializable
 data class AttachmentResponse(val data: AttachmentDto)
 
+/**
+ * What a manual launch may choose for this task, from GET /tasks/{id}/run-options.
+ *
+ * The server resolves [defaults] exactly where the job snapshot resolves them (launch choice →
+ * `spec.stages[].model` → the role's model), so the line the screen shows is what actually runs
+ * when nothing is picked.
+ */
+@Serializable
+data class RunOptionsDto(
+    val defaults: RunDefaultsDto = RunDefaultsDto(),
+    val stages: List<RunStageOptionDto> = emptyList(),
+    val executors: List<RunExecutorOptionDto> = emptyList(),
+    val harnesses: List<HarnessProfileDto> = emptyList(),
+    val reasoningLevels: List<ReasoningLevelDto> = emptyList(),
+)
+
+@Serializable
+data class RunDefaultsDto(
+    val harnessKey: String? = null,
+    val harnessTitle: String? = null,
+    val model: String? = null,
+)
+
+@Serializable
+data class RunStageOptionDto(
+    val order: Int = 0,
+    val role: String = "",
+    val harnessKey: String? = null,
+    val harnessTitle: String? = null,
+    val model: String? = null,
+)
+
+@Serializable
+data class RunExecutorOptionDto(
+    val workerId: String,
+    val executorKey: String,
+    val title: String = "",
+    val workerName: String = "",
+    val harnessKey: String? = null,
+)
+
+/** Suggested models and thinking levels of one harness. A model outside the list is still legal. */
+@Serializable
+data class HarnessProfileDto(
+    val key: String,
+    val title: String = "",
+    val models: List<HarnessModelDto> = emptyList(),
+    val reasoningLevels: List<String> = emptyList(),
+)
+
+@Serializable
+data class HarnessModelDto(val id: String, val title: String = "")
+
+@Serializable
+data class ReasoningLevelDto(val value: String, val title: String = "")
+
+@Serializable
+data class RunOptionsResponse(val data: RunOptionsDto)
+
+/**
+ * The three choices a launch carries. All null = run the pipeline exactly as configured, which is
+ * what the button did before the pickers existed.
+ */
+@Serializable
+data class RunTaskRequest(
+    val workerId: String? = null,
+    val executorKey: String? = null,
+    val model: String? = null,
+    val reasoningLevel: String? = null,
+)
+
 /** Reference to a queued run, returned by POST /tasks/{id}/run. */
 @Serializable
 data class RunRefDto(

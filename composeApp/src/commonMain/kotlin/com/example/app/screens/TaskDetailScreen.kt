@@ -47,6 +47,8 @@ import com.example.app.data.CommentDto
 import com.example.app.data.InteractionDto
 import com.example.app.data.LocalStore
 import com.example.app.data.RunDto
+import com.example.app.data.RunOptionsDto
+import com.example.app.data.RunTaskRequest
 import com.example.app.data.Session
 import com.example.app.data.TaskDetailDto
 import com.example.app.data.TaskDto
@@ -111,6 +113,12 @@ fun TaskDetailScreen(
     // Files chosen for the comment being written, not yet sent: they travel with it on "Отправить",
     // so abandoning the comment abandons them too.
     val commentFiles = remember(taskId) { mutableStateListOf<PickedFile>() }
+    // Loaded once beside the task, not on every poll tick: what a launch may choose changes only
+    // when an operator edits the pipeline or a worker's runners. Null = not loaded (or the server
+    // is older than this endpoint), and the launch block simply does not appear.
+    var runOptions by remember(taskId) { mutableStateOf<RunOptionsDto?>(null) }
+    var runChoice by remember(taskId) { mutableStateOf(RunChoice()) }
+    var runOptionsExpanded by remember(taskId) { mutableStateOf(false) }
 
     suspend fun load() {
         try {
@@ -138,6 +146,12 @@ fun TaskDetailScreen(
 
     LaunchedEffect(taskId, reloadKey) { load() }
 
+    LaunchedEffect(taskId) {
+        // Failure here is silent on purpose: the pickers are an extra, and a red banner over the
+        // whole task would be a poor trade for not being able to change the model.
+        runOptions = runCatching { api.runOptions(session.token, taskId) }.getOrNull()
+    }
+
     // Poll only while something is actually in flight; a finished task costs no requests.
     val active = detail?.latestRun?.status in ACTIVE_RUN_STATES || detail?.task?.status in ACTIVE_TASK_STATES
     LaunchedEffect(taskId, active) {
@@ -152,7 +166,16 @@ fun TaskDetailScreen(
         busy = true
         scope.launch {
             try {
-                api.runTask(session.token, taskId)
+                api.runTask(
+                    session.token,
+                    taskId,
+                    RunTaskRequest(
+                        workerId = runChoice.workerId,
+                        executorKey = runChoice.executorKey,
+                        model = runChoice.model,
+                        reasoningLevel = runChoice.reasoningLevel,
+                    ),
+                )
                 load()
             } catch (e: ApiException) {
                 error = e.message
@@ -337,6 +360,18 @@ fun TaskDetailScreen(
                                 interaction = interaction,
                                 busy = answeringId == interaction.id,
                                 onAnswer = { action, content -> answerInteraction(interaction, action, content) },
+                            )
+                        }
+
+                        runOptions?.let { options ->
+                            Spacer(Modifier.height(16.dp))
+                            RunOptionsSection(
+                                options = options,
+                                choice = runChoice,
+                                expanded = runOptionsExpanded,
+                                enabled = !busy,
+                                onExpandedChange = { runOptionsExpanded = it },
+                                onChoice = { runChoice = it },
                             )
                         }
 

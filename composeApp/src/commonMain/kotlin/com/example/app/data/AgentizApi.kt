@@ -105,10 +105,22 @@ class AgentizApi(baseUrl: String = platformDefaultBaseUrl()) {
      * Queues a pipeline run. The server answers as soon as the job is enqueued, not when it
      * finishes — a worker executes it out of band, so the caller polls [task] for the outcome.
      */
-    suspend fun runTask(token: String, taskId: String): RunRefDto =
+    suspend fun runTask(token: String, taskId: String, choice: RunTaskRequest = RunTaskRequest()): RunRefDto =
         client.post("$root/tasks/$taskId/run") {
             bearerAuth(token)
+            contentType(ContentType.Application.Json)
+            setBody(choice)
         }.decodeOrThrow<RunRefResponse>().data
+
+    /**
+     * What this task's launch may choose, and what it gets untouched. Loaded once with the task
+     * rather than on every poll: it changes only when an operator edits the pipeline or a worker's
+     * runners.
+     */
+    suspend fun runOptions(token: String, taskId: String): RunOptionsDto =
+        client.get("$root/tasks/$taskId/run-options") {
+            bearerAuth(token)
+        }.decodeOrThrow<RunOptionsResponse>().data
 
     /** Compact run history, newest first. Use [run] to load a run's trace. */
     suspend fun runs(token: String, taskId: String): List<RunDto> =
