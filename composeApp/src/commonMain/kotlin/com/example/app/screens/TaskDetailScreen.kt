@@ -5,6 +5,7 @@ import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
@@ -22,6 +23,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateMapOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
@@ -39,6 +41,7 @@ import com.example.app.components.AppTextField
 import com.example.app.components.MenuEntry
 import com.example.app.data.AgentizApi
 import com.example.app.data.ApiException
+import com.example.app.data.AttachmentDto
 import com.example.app.data.CommentDto
 import com.example.app.data.InteractionDto
 import com.example.app.data.LocalStore
@@ -46,6 +49,8 @@ import com.example.app.data.RunDto
 import com.example.app.data.Session
 import com.example.app.data.TaskDetailDto
 import com.example.app.data.TaskDto
+import com.example.app.platform.PickedFile
+import com.example.app.platform.rememberFilePicker
 import com.example.app.markdown.MarkdownText
 import com.example.app.markdown.markdownToPlainText
 import com.example.app.theme.AppTheme
@@ -97,6 +102,11 @@ fun TaskDetailScreen(
     // Answering is tracked separately from `busy`: a question is answered *while* a run is in
     // flight, so gating it on the same flag as "Запустить" would leave it permanently disabled.
     var answeringId by remember { mutableStateOf<String?>(null) }
+    // Attachment bytes already fetched, keyed by attachment id. The screen re-polls every two
+    // seconds while a run is active, so without this every tick would re-download every thumbnail.
+    val attachmentBytes = remember(taskId) { mutableStateMapOf<String, ByteArray>() }
+    var uploadLabel by remember { mutableStateOf<String?>(null) }
+    var viewing by remember { mutableStateOf<AttachmentDto?>(null) }
 
     suspend fun load() {
         try {
@@ -139,6 +149,65 @@ fun TaskDetailScreen(
         scope.launch {
             try {
                 api.runTask(session.token, taskId)
+                load()
+            } catch (e: ApiException) {
+                error = e.message
+            } catch (e: Throwable) {
+                error = "Ошибка сети: ${e.message ?: "неизвестная ошибка"}"
+            } finally {
+                busy = false
+            }
+        }
+    }
+
+    /** Bytes for one attachment, downloaded once and then served from memory. */
+    suspend fun attachmentBytesOf(attachment: AttachmentDto): ByteArray? {
+        attachmentBytes[attachment.id]?.let { return it }
+        return try {
+            api.downloadAttachment(session.token, taskId, attachment.id).also {
+                attachmentBytes[attachment.id] = it
+            }
+        } catch (_: Throwable) {
+            // A missing or unreadable file is a thumbnail that falls back to its glyph, never an
+            // error banner over the whole task.
+            null
+        }
+    }
+
+    /**
+     * Uploads what the picker returned, one file at a time so a single oversized photo fails on
+     * its own and the rest still land.
+     */
+    fun uploadPicked(files: List<PickedFile>) {
+        if (files.isEmpty() || busy) return
+        busy = true
+        scope.launch {
+            try {
+                files.forEachIndexed { index, file ->
+                    uploadLabel = "Загрузка ${index + 1} из ${files.size}: ${file.fileName}"
+                    api.uploadAttachment(session.token, taskId, file.fileName, file.mimeType, file.bytes)
+                }
+                error = null
+                load()
+            } catch (e: ApiException) {
+                error = e.message
+            } catch (e: Throwable) {
+                error = "Ошибка сети: ${e.message ?: "неизвестная ошибка"}"
+            } finally {
+                uploadLabel = null
+                busy = false
+            }
+        }
+    }
+
+    fun deleteAttachment(attachment: AttachmentDto) {
+        if (busy) return
+        busy = true
+        scope.launch {
+            try {
+                api.deleteAttachment(session.token, taskId, attachment.id)
+                attachmentBytes.remove(attachment.id)
+                if (viewing?.id == attachment.id) viewing = null
                 load()
             } catch (e: ApiException) {
                 error = e.message
@@ -211,133 +280,166 @@ fun TaskDetailScreen(
         }
     }
 
+    // Remembered at composable level, not inside the layout: on Android the launcher registers an
+    // activity-result contract, which must happen in composition, not on a button press.
+    val filePicker = rememberFilePicker(onPicked = ::uploadPicked)
+
     val current = detail
-    AppScaffold(
-        title = current?.task?.title ?: "Задача",
-        subtitle = current?.task?.externalId?.takeIf { it.isNotBlank() },
-        menu = menu,
-        onOpenSettings = onOpenSettings,
-        onOpenProfile = onOpenProfile,
-        onBack = onBack,
-    ) {
-        when {
-            current == null && error != null -> RetryState(message = error!!, onRetry = { reloadKey++ })
-            current == null -> CenterMessage("Загрузка задачи…")
-            else -> {
-                // One requester per run, keyed by id, shared between the quick-jump links above and
-                // the history cards below — a link asks the requester for the card that owns the
-                // same run id to scroll itself into view.
-                val runList = runs.orEmpty()
-                val bringIntoViewRequesters = remember(runList.map { it.id }) {
-                    runList.associate { it.id to BringIntoViewRequester() }
-                }
-
-                Column(
-                    modifier = Modifier
-                        .fillMaxSize()
-                        .verticalScroll(rememberScrollState())
-                        .padding(24.dp),
-                ) {
-                    TaskSummary(current.task)
-
-                    if (error != null) {
-                        Spacer(Modifier.height(12.dp))
-                        Text(text = error!!, style = AppTheme.Label, color = AppTheme.Danger)
+    // The viewer is a full-screen layer over the scaffold, so it has to wrap it rather than sit
+    // inside the scrolling column — an overlay inside the scroll would scroll away with the page.
+    Box(modifier = Modifier.fillMaxSize()) {
+        AppScaffold(
+            title = current?.task?.title ?: "Задача",
+            subtitle = current?.task?.externalId?.takeIf { it.isNotBlank() },
+            menu = menu,
+            onOpenSettings = onOpenSettings,
+            onOpenProfile = onOpenProfile,
+            onBack = onBack,
+        ) {
+            when {
+                current == null && error != null -> RetryState(message = error!!, onRetry = { reloadKey++ })
+                current == null -> CenterMessage("Загрузка задачи…")
+                else -> {
+                    // One requester per run, keyed by id, shared between the quick-jump links above and
+                    // the history cards below — a link asks the requester for the card that owns the
+                    // same run id to scroll itself into view.
+                    val runList = runs.orEmpty()
+                    val bringIntoViewRequesters = remember(runList.map { it.id }) {
+                        runList.associate { it.id to BringIntoViewRequester() }
                     }
 
-                    // Above the run controls on purpose: while a question is open the pipeline is
-                    // not going anywhere, so it is the only thing on this screen worth acting on.
-                    current.pendingInteractions.forEach { interaction ->
-                        Spacer(Modifier.height(16.dp))
-                        InteractionCard(
-                            interaction = interaction,
-                            busy = answeringId == interaction.id,
-                            onAnswer = { action, content -> answerInteraction(interaction, action, content) },
+                    Column(
+                        modifier = Modifier
+                            .fillMaxSize()
+                            .verticalScroll(rememberScrollState())
+                            .padding(24.dp),
+                    ) {
+                        TaskSummary(current.task)
+
+                        if (error != null) {
+                            Spacer(Modifier.height(12.dp))
+                            Text(text = error!!, style = AppTheme.Label, color = AppTheme.Danger)
+                        }
+
+                        // Above the run controls on purpose: while a question is open the pipeline is
+                        // not going anywhere, so it is the only thing on this screen worth acting on.
+                        current.pendingInteractions.forEach { interaction ->
+                            Spacer(Modifier.height(16.dp))
+                            InteractionCard(
+                                interaction = interaction,
+                                busy = answeringId == interaction.id,
+                                onAnswer = { action, content -> answerInteraction(interaction, action, content) },
+                            )
+                        }
+
+                        // Above the run controls: files are an *input* to the run, so the order on
+                        // screen is the order of the decision — attach what the agent needs, then start.
+                        Spacer(Modifier.height(20.dp))
+                        AttachmentsSection(
+                            attachments = current.attachments,
+                            busy = busy,
+                            uploadLabel = uploadLabel,
+                            onPickPhotos = { filePicker.pickImages() },
+                            onPickFiles = { filePicker.pickFiles() },
+                            onOpen = { viewing = it },
+                            onDelete = ::deleteAttachment,
+                            loadBytes = ::attachmentBytesOf,
                         )
-                    }
 
-                    Spacer(Modifier.height(16.dp))
-                    AppButton(
-                        text = when {
-                            busy -> "…"
-                            current.task.status in ACTIVE_TASK_STATES -> "Выполняется…"
-                            current.latestRun == null -> "Запустить пайплайн"
-                            else -> "Запустить ещё раз"
-                        },
-                        onClick = ::runPipeline,
-                        enabled = !busy && current.task.status !in ACTIVE_TASK_STATES,
-                        modifier = Modifier.fillMaxWidth(),
-                    )
-
-                    val activeRun = currentRun(current, runs)
-                    if (activeRun != null && activeRun.status in ACTIVE_RUN_STATES) {
-                        Spacer(Modifier.height(12.dp))
-                        val cancelling = activeRun.id == cancellingRunId
+                        Spacer(Modifier.height(16.dp))
                         AppButton(
                             text = when {
                                 busy -> "…"
-                                cancelling -> "Остановка запрошена…"
-                                else -> "Остановить запуск"
+                                current.task.status in ACTIVE_TASK_STATES -> "Выполняется…"
+                                current.latestRun == null -> "Запустить пайплайн"
+                                else -> "Запустить ещё раз"
                             },
-                            onClick = ::cancelPipeline,
-                            enabled = !busy && !cancelling,
+                            onClick = ::runPipeline,
+                            enabled = !busy && current.task.status !in ACTIVE_TASK_STATES,
                             modifier = Modifier.fillMaxWidth(),
                         )
-                    }
 
-                    if (runList.isNotEmpty()) {
-                        // The server now keeps runs inside the task's historical context further
-                        // down the page instead of surfacing them at the top; these links stay at
-                        // the top and jump straight to a run's card in that history instead of
-                        // requiring a scroll-hunt for it.
+                        val activeRun = currentRun(current, runs)
+                        if (activeRun != null && activeRun.status in ACTIVE_RUN_STATES) {
+                            Spacer(Modifier.height(12.dp))
+                            val cancelling = activeRun.id == cancellingRunId
+                            AppButton(
+                                text = when {
+                                    busy -> "…"
+                                    cancelling -> "Остановка запрошена…"
+                                    else -> "Остановить запуск"
+                                },
+                                onClick = ::cancelPipeline,
+                                enabled = !busy && !cancelling,
+                                modifier = Modifier.fillMaxWidth(),
+                            )
+                        }
+
+                        if (runList.isNotEmpty()) {
+                            // The server now keeps runs inside the task's historical context further
+                            // down the page instead of surfacing them at the top; these links stay at
+                            // the top and jump straight to a run's card in that history instead of
+                            // requiring a scroll-hunt for it.
+                            Spacer(Modifier.height(20.dp))
+                            RunQuickLinks(
+                                runs = runList,
+                                requesters = bringIntoViewRequesters,
+                                scope = scope,
+                            )
+                        }
+
+                        Spacer(Modifier.height(24.dp))
+                        SectionTitle("Обсуждение")
+                        Spacer(Modifier.height(12.dp))
+                        if (runList.isEmpty() && current.comments.isEmpty()) {
+                            Text(text = "Пока нет комментариев.", style = AppTheme.Body, color = AppTheme.Muted)
+                        } else {
+                            // Runs and comments used to sit in two separate lists — a "Запуски" block
+                            // above the discussion — which hid the actual back-and-forth: an agent's
+                            // report is a reply to the run just before it, not a document filed
+                            // somewhere else. Interleaving them by timestamp turns the page into one
+                            // timeline that reads the way the conversation actually happened.
+                            Timeline(
+                                runs = runList,
+                                comments = current.comments,
+                                requesters = bringIntoViewRequesters,
+                                onOpenRun = onOpenRun,
+                            )
+                        }
+
                         Spacer(Modifier.height(20.dp))
-                        RunQuickLinks(
-                            runs = runList,
-                            requesters = bringIntoViewRequesters,
-                            scope = scope,
+                        AppTextField(
+                            label = "Новый комментарий",
+                            value = comment,
+                            onValueChange = { comment = it },
+                            placeholder = "Написать…",
+                            enabled = !busy,
+                            imeAction = ImeAction.Done,
+                            // Comments here are replies to an agent's report, not one-liners.
+                            minLines = 3,
                         )
-                    }
-
-                    Spacer(Modifier.height(24.dp))
-                    SectionTitle("Обсуждение")
-                    Spacer(Modifier.height(12.dp))
-                    if (runList.isEmpty() && current.comments.isEmpty()) {
-                        Text(text = "Пока нет комментариев.", style = AppTheme.Body, color = AppTheme.Muted)
-                    } else {
-                        // Runs and comments used to sit in two separate lists — a "Запуски" block
-                        // above the discussion — which hid the actual back-and-forth: an agent's
-                        // report is a reply to the run just before it, not a document filed
-                        // somewhere else. Interleaving them by timestamp turns the page into one
-                        // timeline that reads the way the conversation actually happened.
-                        Timeline(
-                            runs = runList,
-                            comments = current.comments,
-                            requesters = bringIntoViewRequesters,
-                            onOpenRun = onOpenRun,
+                        Spacer(Modifier.height(12.dp))
+                        AppButton(
+                            text = "Отправить",
+                            onClick = ::submitComment,
+                            enabled = !busy && comment.isNotBlank(),
+                            modifier = Modifier.fillMaxWidth(),
                         )
+                        Spacer(Modifier.height(24.dp))
                     }
-
-                    Spacer(Modifier.height(20.dp))
-                    AppTextField(
-                        label = "Новый комментарий",
-                        value = comment,
-                        onValueChange = { comment = it },
-                        placeholder = "Написать…",
-                        enabled = !busy,
-                        imeAction = ImeAction.Done,
-                        // Comments here are replies to an agent's report, not one-liners.
-                        minLines = 3,
-                    )
-                    Spacer(Modifier.height(12.dp))
-                    AppButton(
-                        text = "Отправить",
-                        onClick = ::submitComment,
-                        enabled = !busy && comment.isNotBlank(),
-                        modifier = Modifier.fillMaxWidth(),
-                    )
-                    Spacer(Modifier.height(24.dp))
                 }
             }
+        }
+
+        viewing?.let { attachment ->
+            // The bytes are already in the cache whenever a thumbnail rendered; a non-image opens the
+            // viewer with null and gets the "нельзя показать" message instead of a blank screen.
+            AttachmentViewer(
+                attachment = attachment,
+                bytes = attachmentBytes[attachment.id],
+                onClose = { viewing = null },
+            )
+            LaunchedEffect(attachment.id) { attachmentBytesOf(attachment) }
         }
     }
 }

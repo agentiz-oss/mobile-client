@@ -10,8 +10,10 @@ import io.ktor.client.request.post
 import io.ktor.client.request.put
 import io.ktor.client.request.setBody
 import io.ktor.client.statement.HttpResponse
+import io.ktor.client.statement.readRawBytes
 import io.ktor.http.ContentType
 import io.ktor.http.contentType
+import io.ktor.http.encodeURLParameter
 import io.ktor.http.isSuccess
 import io.ktor.serialization.kotlinx.json.json
 import kotlinx.serialization.json.Json
@@ -214,6 +216,53 @@ class AgentizApi(baseUrl: String = platformDefaultBaseUrl()) {
             contentType(ContentType.Application.Json)
             setBody(CreateCommentRequest(body = body))
         }.decodeOrThrow<CommentResponse>().data
+
+    /** Files attached to a task, in upload order. The task detail already carries these too. */
+    suspend fun attachments(token: String, taskId: String): List<AttachmentDto> =
+        client.get("$root/tasks/$taskId/attachments") {
+            bearerAuth(token)
+        }.decodeOrThrow<AttachmentsResponse>().data
+
+    /**
+     * Uploads one file as a raw body, with its name in the query.
+     *
+     * Not multipart on purpose: the server reads the body straight through, so there is no
+     * boundary encoding to get wrong and no extra dependency on either side. One call per file
+     * also means a failed photo fails alone, which on a phone connection is the common case.
+     */
+    suspend fun uploadAttachment(
+        token: String,
+        taskId: String,
+        fileName: String,
+        mimeType: String?,
+        bytes: ByteArray,
+    ): AttachmentDto =
+        client.post("$root/tasks/$taskId/attachments?fileName=${fileName.encodeURLParameter()}") {
+            bearerAuth(token)
+            contentType(mimeType?.let { runCatching { ContentType.parse(it) }.getOrNull() } ?: ContentType.Application.OctetStream)
+            setBody(bytes)
+        }.decodeOrThrow<AttachmentResponse>().data
+
+    /** The bytes of one attachment — what the thumbnail and the full-screen viewer both render. */
+    suspend fun downloadAttachment(token: String, taskId: String, attachmentId: String): ByteArray {
+        val response = client.get("$root/tasks/$taskId/attachments/$attachmentId") {
+            bearerAuth(token)
+        }
+        if (!response.status.isSuccess()) {
+            throw ApiException(response.status.value, "Не удалось загрузить файл (HTTP ${response.status.value})")
+        }
+        return response.readRawBytes()
+    }
+
+    suspend fun deleteAttachment(token: String, taskId: String, attachmentId: String) {
+        val response = client.delete("$root/tasks/$taskId/attachments/$attachmentId") {
+            bearerAuth(token)
+        }
+        if (!response.status.isSuccess()) {
+            val serverMessage = runCatching { response.body<ErrorResponse>().message }.getOrNull()
+            throw ApiException(response.status.value, serverMessage ?: "Не удалось удалить файл")
+        }
+    }
 
     /**
      * Every worker of the installation with the harness limits it runs under. Not scoped to the

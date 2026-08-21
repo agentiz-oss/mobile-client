@@ -257,7 +257,32 @@ data class TaskDetailDto(
      * belong to a run this payload does not carry in full, and it would then be invisible.
      */
     val pendingInteractions: List<InteractionDto> = emptyList(),
+    /** Files and photos attached to the task; the agent receives these when a run starts. */
+    val attachments: List<AttachmentDto> = emptyList(),
 )
+
+/**
+ * One file attached to a task. Metadata only — the bytes are fetched separately, by id, so a
+ * task with a dozen photos costs one small payload to open and downloads only what is on screen.
+ */
+@Serializable
+data class AttachmentDto(
+    val id: String,
+    val fileName: String,
+    val mimeType: String? = null,
+    val sizeBytes: Long = 0,
+    val uploadedByName: String? = null,
+    val createdAt: String? = null,
+) {
+    /** Whether the app can render this inline as a thumbnail rather than as a file row. */
+    val isImage: Boolean get() = mimeType?.startsWith("image/") == true
+}
+
+@Serializable
+data class AttachmentsResponse(val data: List<AttachmentDto> = emptyList())
+
+@Serializable
+data class AttachmentResponse(val data: AttachmentDto)
 
 /** Reference to a queued run, returned by POST /tasks/{id}/run. */
 @Serializable
