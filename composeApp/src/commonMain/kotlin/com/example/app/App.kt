@@ -1,5 +1,12 @@
 package com.example.app
 
+import androidx.compose.animation.AnimatedContent
+import androidx.compose.animation.core.FastOutSlowInEasing
+import androidx.compose.animation.core.tween
+import androidx.compose.animation.slideInHorizontally
+import androidx.compose.animation.slideOutHorizontally
+import androidx.compose.animation.togetherWith
+import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
@@ -8,6 +15,8 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
+import androidx.compose.ui.Modifier
+import androidx.compose.ui.unit.IntOffset
 import com.example.app.components.MenuEntry
 import com.example.app.data.AgentizApi
 import com.example.app.data.ProjectDto
@@ -114,6 +123,13 @@ private sealed interface Destination {
 }
 
 /**
+ * Which way the screen change should slide. Not derivable from the destinations themselves —
+ * the drawer jumps sideways across the graph — so every navigation states it explicitly: [go]
+ * pushes from the right, [goBack] returns from the left, GitHub-app style.
+ */
+private enum class NavDirection { Forward, Back }
+
+/**
  * The project a destination is "in", if any. Settings and Profile inherit it from wherever they
  * were opened, so the drawer keeps offering the project you were last looking at.
  *
@@ -150,7 +166,18 @@ fun App() {
     // very first frame is already the right screen, with no login flash before it.
     var session by remember { mutableStateOf(loadSession()) }
     var destination by remember { mutableStateOf<Destination>(Destination.Projects) }
+    var navDirection by remember { mutableStateOf(NavDirection.Forward) }
     val scope = rememberCoroutineScope()
+
+    fun go(dest: Destination) {
+        navDirection = NavDirection.Forward
+        destination = dest
+    }
+
+    fun goBack(dest: Destination) {
+        navDirection = NavDirection.Back
+        destination = dest
+    }
 
     fun logout() {
         // Tell the server to forget this phone *before* the session is dropped — afterwards there is
@@ -188,7 +215,7 @@ fun App() {
     }
 
     fun openAgent() {
-        destination = Destination.Agent(destination)
+        go(Destination.Agent(destination))
     }
 
     // Push, in both directions. Asking for the token only once someone is signed in keeps the
@@ -241,7 +268,7 @@ fun App() {
             is Destination.Activities -> here.from
             else -> here
         }
-        destination = when (route) {
+        val opened = when (route) {
             is PushRoute.Question -> Destination.Interactions(from = from, focusInteractionId = route.interactionId)
             is PushRoute.Activity -> {
                 val taskId = route.taskId
@@ -260,6 +287,7 @@ fun App() {
                 }
             }
         }
+        go(opened)
     }
 
     // One summary request feeds every ambient counter: the questions badge, the activities badge
@@ -296,7 +324,7 @@ fun App() {
         add(
             MenuEntry(
                 label = "Проекты",
-                onClick = { destination = Destination.Projects },
+                onClick = { goBack(Destination.Projects) },
                 enabled = destination !is Destination.Projects,
             ),
         )
@@ -309,7 +337,7 @@ fun App() {
             add(
                 MenuEntry(
                     label = "Задачи: ${project.name}",
-                    onClick = { destination = Destination.Tasks(project) },
+                    onClick = { goBack(Destination.Tasks(project)) },
                     enabled = destination !is Destination.Tasks,
                 ),
             )
@@ -317,28 +345,28 @@ fun App() {
         add(
             MenuEntry(
                 label = if (activeRuns > 0) "Запуски ($activeRuns)" else "Запуски",
-                onClick = { destination = Destination.Runs(destination) },
+                onClick = { go(Destination.Runs(destination)) },
                 enabled = destination !is Destination.Runs,
             ),
         )
         add(
             MenuEntry(
                 label = if (pendingInteractions > 0) "Вопросы ($pendingInteractions)" else "Вопросы",
-                onClick = { destination = Destination.Interactions(destination) },
+                onClick = { go(Destination.Interactions(destination)) },
                 enabled = destination !is Destination.Interactions,
             ),
         )
         add(
             MenuEntry(
                 label = if (summary.unseen > 0) "Активности (${summary.unseen})" else "Активности",
-                onClick = { destination = Destination.Activities(destination) },
+                onClick = { go(Destination.Activities(destination)) },
                 enabled = destination !is Destination.Activities,
             ),
         )
         add(
             MenuEntry(
                 label = "Воркеры",
-                onClick = { destination = Destination.Workers(destination) },
+                onClick = { go(Destination.Workers(destination)) },
                 enabled = destination !is Destination.Workers,
             ),
         )
@@ -357,177 +385,201 @@ fun App() {
 
     // Captured once so every screen opens the two footer pages the same way, each remembering the
     // destination it was opened from.
-    val openSettings = { destination = Destination.Settings(destination) }
-    val openProfile = { destination = Destination.Profile(destination) }
+    val openSettings = { go(Destination.Settings(destination)) }
+    val openProfile = { go(Destination.Profile(destination)) }
 
-    when (val where = destination) {
-        is Destination.Projects -> ProjectsScreen(
-            session = current,
-            menu = menu,
-            userLabel = userLabel,
-            onOpenProject = { destination = Destination.Tasks(it) },
-            onOpenSettings = openSettings,
-            onOpenProfile = openProfile,
-        )
+    // GitHub-app style screen changes: forward pushes the new screen in from the right while the
+    // old one recedes a third of the way left; back is the mirror image. The z-order flips with
+    // the direction, or a return would look like another push in reverse.
+    AnimatedContent(
+        targetState = destination,
+        modifier = Modifier.fillMaxSize(),
+        transitionSpec = {
+            val spec = tween<IntOffset>(durationMillis = 300, easing = FastOutSlowInEasing)
+            if (navDirection == NavDirection.Forward) {
+                (slideInHorizontally(spec) { it } togetherWith slideOutHorizontally(spec) { -it / 3 })
+                    .apply { targetContentZIndex = 1f }
+            } else {
+                (slideInHorizontally(spec) { -it / 3 } togetherWith slideOutHorizontally(spec) { it })
+                    .apply { targetContentZIndex = -1f }
+            }
+        },
+    ) { where ->
+        when (where) {
+            is Destination.Projects -> ProjectsScreen(
+                session = current,
+                menu = menu,
+                userLabel = userLabel,
+                onOpenProject = { go(Destination.Tasks(it)) },
+                onOpenSettings = openSettings,
+                onOpenProfile = openProfile,
+            )
 
-        is Destination.Tasks -> TasksScreen(
-            session = current,
-            project = where.project,
-            menu = menu,
-            onOpenTask = { destination = Destination.Task(where.project, it.id) },
-            onBack = { destination = Destination.Projects },
-            onOpenSettings = openSettings,
-            onOpenProfile = openProfile,
-        )
+            is Destination.Tasks -> TasksScreen(
+                session = current,
+                project = where.project,
+                menu = menu,
+                onOpenTask = { go(Destination.Task(where.project, it.id)) },
+                onBack = { goBack(Destination.Projects) },
+                onOpenSettings = openSettings,
+                onOpenProfile = openProfile,
+            )
 
-        is Destination.Task -> TaskDetailScreen(
-            session = current,
-            taskId = where.taskId,
-            menu = menu,
-            onBack = { destination = where.from ?: Destination.Tasks(where.project) },
-            onOpenSettings = openSettings,
-            onOpenProfile = openProfile,
-            // `from` is this very task frame, not a rebuilt one: back off the run lands on the
-            // screen it was opened from with its own history intact, and "к задаче" on the run's
-            // page recognises it as somewhere the reader has already been.
-            onOpenRun = { run, number ->
-                destination = Destination.Run(where.project, where.taskId, run.id, number, from = where)
-            },
-        )
+            is Destination.Task -> TaskDetailScreen(
+                session = current,
+                taskId = where.taskId,
+                menu = menu,
+                onBack = { goBack(where.from ?: Destination.Tasks(where.project)) },
+                onOpenSettings = openSettings,
+                onOpenProfile = openProfile,
+                // `from` is this very task frame, not a rebuilt one: back off the run lands on the
+                // screen it was opened from with its own history intact, and "к задаче" on the run's
+                // page recognises it as somewhere the reader has already been.
+                onOpenRun = { run, number ->
+                    go(Destination.Run(where.project, where.taskId, run.id, number, from = where))
+                },
+            )
 
-        is Destination.Run -> RunDetailScreen(
-            session = current,
-            taskId = where.taskId,
-            runId = where.runId,
-            runNumber = where.runNumber,
-            menu = menu,
-            onBack = { destination = where.from ?: Destination.Task(where.project, where.taskId) },
-            onOpenSettings = openSettings,
-            onOpenProfile = openProfile,
-            // Going *back* rather than deeper when the run was opened from this very task: the
-            // reader ends up on the screen they came from, not on a second copy of it stacked
-            // under the run. Everywhere else — the board, the feed, a notification — the task is
-            // new ground and the run stays underneath it.
-            onOpenTask = { projectId, projectName ->
-                val origin = where.from as? Destination.Task
-                destination = if (origin != null && origin.taskId == where.taskId) {
-                    origin
-                } else {
-                    Destination.Task(
-                        // A run opened from a notification can arrive with no project at all —
-                        // the run itself is what knows, and it has been loaded by the time this
-                        // is tapped. Without this the task's own back button leads nowhere.
-                        project = where.project.takeIf { it.id.isNotBlank() }
-                            ?: ProjectDto(
-                                id = projectId.orEmpty(),
-                                name = projectName?.takeIf { it.isNotBlank() } ?: where.project.name,
+            is Destination.Run -> RunDetailScreen(
+                session = current,
+                taskId = where.taskId,
+                runId = where.runId,
+                runNumber = where.runNumber,
+                menu = menu,
+                onBack = { goBack(where.from ?: Destination.Task(where.project, where.taskId)) },
+                onOpenSettings = openSettings,
+                onOpenProfile = openProfile,
+                // Going *back* rather than deeper when the run was opened from this very task: the
+                // reader ends up on the screen they came from, not on a second copy of it stacked
+                // under the run. Everywhere else — the board, the feed, a notification — the task is
+                // new ground and the run stays underneath it.
+                onOpenTask = { projectId, projectName ->
+                    val origin = where.from as? Destination.Task
+                    if (origin != null && origin.taskId == where.taskId) {
+                        goBack(origin)
+                    } else {
+                        go(
+                            Destination.Task(
+                            // A run opened from a notification can arrive with no project at all —
+                            // the run itself is what knows, and it has been loaded by the time this
+                            // is tapped. Without this the task's own back button leads nowhere.
+                                project = where.project.takeIf { it.id.isNotBlank() }
+                                    ?: ProjectDto(
+                                        id = projectId.orEmpty(),
+                                        name = projectName?.takeIf { it.isNotBlank() } ?: where.project.name,
+                                    ),
+                                taskId = where.taskId,
+                                from = where,
                             ),
-                        taskId = where.taskId,
-                        from = where,
+                        )
+                    }
+                },
+            )
+
+            is Destination.Interactions -> InteractionsScreen(
+                session = current,
+                menu = menu,
+                focusInteractionId = where.focusInteractionId,
+                onBack = { goBack(where.from) },
+                onOpenSettings = { go(Destination.Settings(where)) },
+                onOpenProfile = { go(Destination.Profile(where)) },
+                // A question knows its project by id and name only, which is all the task screen and
+                // the drawer need — the full project row is never loaded just to navigate.
+                onOpenTask = { projectId, projectName, taskId ->
+                    go(Destination.Task(ProjectDto(id = projectId, name = projectName ?: "Проект"), taskId))
+                },
+            )
+
+            is Destination.Activities -> ActivitiesScreen(
+                session = current,
+                menu = menu,
+                onBack = { goBack(where.from) },
+                onOpenSettings = { go(Destination.Settings(where)) },
+                onOpenProfile = { go(Destination.Profile(where)) },
+                onOpenInteraction = { interactionId ->
+                    go(Destination.Interactions(from = where, focusInteractionId = interactionId))
+                },
+                // A feed row knows its project by id and name only — the same shortcut the questions
+                // screen takes, since navigating never needs the full project row.
+                onOpenRun = { projectId, projectName, taskId, runId ->
+                    go(
+                        Destination.Run(
+                            project = ProjectDto(id = projectId, name = projectName ?: "Проект"),
+                            taskId = taskId,
+                            runId = runId,
+                            runNumber = null,
+                            from = where,
+                        ),
                     )
-                }
-            },
-        )
+                },
+            )
 
-        is Destination.Interactions -> InteractionsScreen(
-            session = current,
-            menu = menu,
-            focusInteractionId = where.focusInteractionId,
-            onBack = { destination = where.from },
-            onOpenSettings = { destination = Destination.Settings(where) },
-            onOpenProfile = { destination = Destination.Profile(where) },
-            // A question knows its project by id and name only, which is all the task screen and
-            // the drawer need — the full project row is never loaded just to navigate.
-            onOpenTask = { projectId, projectName, taskId ->
-                destination = Destination.Task(ProjectDto(id = projectId, name = projectName ?: "Проект"), taskId)
-            },
-        )
+            is Destination.Runs -> RunsScreen(
+                session = current,
+                menu = menu,
+                onBack = { goBack(where.from) },
+                onOpenSettings = { go(Destination.Settings(where)) },
+                onOpenProfile = { go(Destination.Profile(where)) },
+                // A board row knows its project by id and name only — the same shortcut the questions
+                // screen takes, since navigating never needs the full project row.
+                onOpenRun = { projectId, projectName, taskId, runId ->
+                    go(
+                        Destination.Run(
+                            project = ProjectDto(id = projectId, name = projectName ?: "Проект"),
+                            taskId = taskId,
+                            runId = runId,
+                            runNumber = null,
+                            from = where,
+                        ),
+                    )
+                },
+            )
 
-        is Destination.Activities -> ActivitiesScreen(
-            session = current,
-            menu = menu,
-            onBack = { destination = where.from },
-            onOpenSettings = { destination = Destination.Settings(where) },
-            onOpenProfile = { destination = Destination.Profile(where) },
-            onOpenInteraction = { interactionId ->
-                destination = Destination.Interactions(from = where, focusInteractionId = interactionId)
-            },
-            // A feed row knows its project by id and name only — the same shortcut the questions
-            // screen takes, since navigating never needs the full project row.
-            onOpenRun = { projectId, projectName, taskId, runId ->
-                destination = Destination.Run(
-                    project = ProjectDto(id = projectId, name = projectName ?: "Проект"),
-                    taskId = taskId,
-                    runId = runId,
-                    runNumber = null,
-                    from = where,
-                )
-            },
-        )
+            is Destination.Workers -> WorkersScreen(
+                session = current,
+                menu = menu,
+                onBack = { goBack(where.from) },
+                onOpenSettings = { go(Destination.Settings(where)) },
+                onOpenProfile = { go(Destination.Profile(where)) },
+            )
 
-        is Destination.Runs -> RunsScreen(
-            session = current,
-            menu = menu,
-            onBack = { destination = where.from },
-            onOpenSettings = { destination = Destination.Settings(where) },
-            onOpenProfile = { destination = Destination.Profile(where) },
-            // A board row knows its project by id and name only — the same shortcut the questions
-            // screen takes, since navigating never needs the full project row.
-            onOpenRun = { projectId, projectName, taskId, runId ->
-                destination = Destination.Run(
-                    project = ProjectDto(id = projectId, name = projectName ?: "Проект"),
-                    taskId = taskId,
-                    runId = runId,
-                    runNumber = null,
-                    from = where,
-                )
-            },
-        )
+            is Destination.Agent -> AgentDashboardScreen(
+                session = current,
+                menu = menu,
+                onBack = { goBack(where.from) },
+                onOpenSettings = { go(Destination.Settings(where)) },
+                onOpenProfile = { go(Destination.Profile(where)) },
+            )
 
-        is Destination.Workers -> WorkersScreen(
-            session = current,
-            menu = menu,
-            onBack = { destination = where.from },
-            onOpenSettings = { destination = Destination.Settings(where) },
-            onOpenProfile = { destination = Destination.Profile(where) },
-        )
+            // The footer icon for the page you are already on is left inert rather than pushing a
+            // second copy of it — tapping "Настройки" from settings should do nothing, not deepen the
+            // back stack by one indistinguishable screen.
+            is Destination.Settings -> SettingsScreen(
+                menu = menu,
+                onBack = { goBack(where.from) },
+                onOpenSettings = {},
+                onOpenProfile = { go(Destination.Profile(where.from)) },
+                onOpenNotifications = { go(Destination.Notifications(where)) },
+            )
 
-        is Destination.Agent -> AgentDashboardScreen(
-            session = current,
-            menu = menu,
-            onBack = { destination = where.from },
-            onOpenSettings = { destination = Destination.Settings(where) },
-            onOpenProfile = { destination = Destination.Profile(where) },
-        )
+            // Back returns to the settings hub it was opened from, while the footer's settings icon
+            // goes there too rather than stacking a second copy of this page under it.
+            is Destination.Notifications -> NotificationsScreen(
+                session = current,
+                menu = menu,
+                onBack = { goBack(where.from) },
+                onOpenSettings = { goBack(where.from) },
+                onOpenProfile = { go(Destination.Profile(where.from)) },
+            )
 
-        // The footer icon for the page you are already on is left inert rather than pushing a
-        // second copy of it — tapping "Настройки" from settings should do nothing, not deepen the
-        // back stack by one indistinguishable screen.
-        is Destination.Settings -> SettingsScreen(
-            menu = menu,
-            onBack = { destination = where.from },
-            onOpenSettings = {},
-            onOpenProfile = { destination = Destination.Profile(where.from) },
-            onOpenNotifications = { destination = Destination.Notifications(where) },
-        )
-
-        // Back returns to the settings hub it was opened from, while the footer's settings icon
-        // goes there too rather than stacking a second copy of this page under it.
-        is Destination.Notifications -> NotificationsScreen(
-            session = current,
-            menu = menu,
-            onBack = { destination = where.from },
-            onOpenSettings = { destination = where.from },
-            onOpenProfile = { destination = Destination.Profile(where.from) },
-        )
-
-        is Destination.Profile -> ProfileScreen(
-            session = current,
-            menu = menu,
-            onLogout = ::logout,
-            onBack = { destination = where.from },
-            onOpenSettings = { destination = Destination.Settings(where.from) },
-            onOpenProfile = {},
-        )
+            is Destination.Profile -> ProfileScreen(
+                session = current,
+                menu = menu,
+                onLogout = ::logout,
+                onBack = { goBack(where.from) },
+                onOpenSettings = { go(Destination.Settings(where.from)) },
+                onOpenProfile = {},
+            )
+        }
     }
 }

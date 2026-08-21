@@ -32,6 +32,7 @@ import androidx.compose.ui.unit.dp
 import com.composeunstyled.Text
 import com.example.app.components.DownIcon
 import com.example.app.components.ForwardIcon
+import com.example.app.components.StatusIcon
 import com.example.app.data.DiffDto
 import com.example.app.data.InteractionDto
 import com.example.app.data.LogEntryDto
@@ -105,6 +106,12 @@ internal fun TaskLinkRow(taskTitle: String?, projectName: String?, onClick: () -
 /**
  * The full record of one pipeline run: its stages, its log trace and the worker's final answer.
  *
+ * The page is ordered by how much a reader needs each part: what happened (status, cost, a
+ * failure's reason), then what is being asked of them (a pending question), then what the agent
+ * actually wrote, and only then the machinery — the log and the raw worker payload, both folded.
+ * The trace used to sit in the middle of the page, between the stages and their summary, which put
+ * a scrollbox of debug lines between a person and the two paragraphs they came to read.
+ *
  * [onAnswerInteraction] is what makes a paused run actionable from its own page — without it the
  * questions are still shown, but read-only, which is all a finished run's history needs.
  */
@@ -114,6 +121,10 @@ internal fun RunResult(
     interactionBusyId: String? = null,
     onAnswerInteraction: ((InteractionDto, String, JsonObject?) -> Unit)? = null,
 ) {
+    // Which folded sections the reader has opened. Keyed by the run, so opening the log on one run
+    // does not open it on the next one shown in the same slot.
+    val opened = remember(run.id) { mutableStateMapOf<String, Boolean>() }
+
     SectionTitle("Результат запуска")
     Spacer(Modifier.height(12.dp))
     Column(
@@ -123,12 +134,10 @@ internal fun RunResult(
             .background(AppTheme.Surface, RoundedCornerShape(AppTheme.Radius))
             .padding(16.dp),
     ) {
-        RunStatusBadge(run.status)
-
-        // What the run cost, spelled like the dashboard's run header: total, the in/out/cache
-        // split, and the price estimate when the server computed one.
+        // No status badge here: the page heads itself with a fact strip that already says
+        // «Статус», and the two sat one under the other. The spend stays, because it is the
+        // breakdown that strip has no room for — the in/out/cache split and the price estimate.
         run.usage?.takeIf { totalTokens(it) > 0 }?.let { usage ->
-            Spacer(Modifier.height(10.dp))
             val parts = buildList {
                 add("${formatTokens(totalTokens(usage))} токенов")
                 add("вход ${formatTokens(usage.inputTokens)}")
@@ -137,6 +146,13 @@ internal fun RunResult(
                 usage.estimatedCostUsd?.takeIf { it > 0 }?.let { add(formatCostUsd(it)) }
             }
             Text(text = parts.joinToString(" · "), style = AppTheme.Label, color = AppTheme.Muted)
+        }
+
+        // Directly under the strip that says "ошибка", not at the foot of the page: the reason is
+        // the first thing wanted from a failed run, and it used to be below every stage and log.
+        run.errorMessage?.takeIf { it.isNotBlank() }?.let { failure ->
+            if (run.usage != null) Spacer(Modifier.height(8.dp))
+            Text(text = failure, style = AppTheme.Body, color = AppTheme.Danger)
         }
 
         if (run.interactions.isNotEmpty()) {
@@ -158,32 +174,25 @@ internal fun RunResult(
             }
         }
 
-        run.stages.forEach { stage ->
-            Spacer(Modifier.height(12.dp))
-            StageRow(stage)
+        if (run.stages.isNotEmpty()) {
+            Spacer(Modifier.height(16.dp))
+            SectionTitle("Этапы")
+            run.stages.forEach { stage ->
+                Spacer(Modifier.height(8.dp))
+                StageCard(stage)
+            }
         }
 
-        if (run.logs.isNotEmpty()) {
+        // The worker builds this by gluing the stages' own text together, so on the common
+        // single-stage pipeline it is the paragraph directly above it, once more. Shown only when
+        // it says something the stages did not — never dropped when there is any doubt, because on
+        // a run whose stages left no prose it is the only account of what happened.
+        val summary = run.resultSummary?.takeIf { it.isNotBlank() }
+        if (summary != null && !summaryRepeatsStages(summary, run.stages)) {
             Spacer(Modifier.height(16.dp))
-            SectionTitle("Лог выполнения")
+            SectionTitle("Итог воркера")
             Spacer(Modifier.height(8.dp))
-            // Keep the process trace selectable: workers can emit details that need to be copied
-            // into an issue or a reply. SelectionContainer provides the native copy action on
-            // touch devices and Cmd/Ctrl+C support on desktop.
-            SelectionContainer {
-                Column(
-                    // A trace of a few hundred debug lines would otherwise push the rest of the page
-                    // out of reach. Capped and given its own scroll, the log stays inspectable
-                    // without becoming the whole page; heightIn means a short log still shrinks.
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .heightIn(max = 260.dp)
-                        .verticalScroll(rememberScrollState()),
-                    verticalArrangement = Arrangement.spacedBy(4.dp),
-                ) {
-                    run.logs.forEach { LogLine(it) }
-                }
-            }
+            MarkdownText(text = summary, style = AppTheme.Body, color = AppTheme.Foreground)
         }
 
         run.diff?.let { diff ->
@@ -191,27 +200,132 @@ internal fun RunResult(
             DiffSection(diff)
         }
 
-        val summary = run.resultSummary?.takeIf { it.isNotBlank() }
-        if (summary != null) {
+        if (run.logs.isNotEmpty()) {
             Spacer(Modifier.height(16.dp))
-            SectionTitle("Итог воркера")
-            Spacer(Modifier.height(8.dp))
-            MarkdownText(text = summary, style = AppTheme.Body, color = AppTheme.Foreground)
+            val open = opened[LOG_SECTION] == true
+            CollapsibleSection(
+                title = "Лог выполнения",
+                note = logCountLabel(run.logs.size),
+                expanded = open,
+                onToggle = { opened[LOG_SECTION] = !open },
+            ) {
+                // Keep the process trace selectable: workers can emit details that need to be
+                // copied into an issue or a reply. SelectionContainer provides the native copy
+                // action on touch devices and Cmd/Ctrl+C support on desktop.
+                SelectionContainer {
+                    Column(
+                        // A trace of a few hundred debug lines would otherwise push the rest of the
+                        // page out of reach. Capped and given its own scroll, the log stays
+                        // inspectable without becoming the whole page; heightIn means a short log
+                        // still shrinks.
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .heightIn(max = 260.dp)
+                            .verticalScroll(rememberScrollState()),
+                        verticalArrangement = Arrangement.spacedBy(4.dp),
+                    ) {
+                        run.logs.forEach { LogLine(it) }
+                    }
+                }
+            }
+            // Folded, a running run would show no sign of life at all — the log is the only thing
+            // moving while a stage works. Its newest line stays out, and only while that is true.
+            if (!open && run.status in ACTIVE_RUN_STATES) {
+                Spacer(Modifier.height(6.dp))
+                LogLine(run.logs.last())
+            }
         }
 
         run.workerResult?.let { result ->
             Spacer(Modifier.height(16.dp))
-            SectionTitle("Полный ответ воркера")
-            Spacer(Modifier.height(8.dp))
-            // Worker result schemas may evolve independently. Show the complete JSON the server
-            // persisted rather than silently dropping fields the client does not know yet — as a
-            // tree, because "complete" here regularly means hundreds of lines.
-            JsonViewer(element = result, rootLabel = "результат")
+            val open = opened[WORKER_RESULT_SECTION] == true
+            CollapsibleSection(
+                title = "Полный ответ воркера",
+                note = "JSON",
+                expanded = open,
+                onToggle = { opened[WORKER_RESULT_SECTION] = !open },
+            ) {
+                // Worker result schemas may evolve independently. Show the complete JSON the server
+                // persisted rather than silently dropping fields the client does not know yet — as a
+                // tree, because "complete" here regularly means hundreds of lines.
+                JsonViewer(element = result, rootLabel = "результат")
+            }
         }
-        val failure = run.errorMessage?.takeIf { it.isNotBlank() }
-        if (failure != null) {
-            Spacer(Modifier.height(12.dp))
-            Text(text = failure, style = AppTheme.Body, color = AppTheme.Danger)
+    }
+}
+
+private const val LOG_SECTION = "logs"
+private const val WORKER_RESULT_SECTION = "workerResult"
+
+/**
+ * Whether «Итог воркера» would only repeat the stages above it.
+ *
+ * The worker's summary is `"- " + each stage's text`, joined by newlines
+ * (`worker/src/agentiz_worker/main.py`), so the two are the same words in the same order and differ
+ * only by that bullet and by where the lines break. Compared with both removed: anything the worker
+ * added of its own — a line no stage produced, a summary written instead of the stages' text —
+ * leaves a difference and the section is shown.
+ */
+internal fun summaryRepeatsStages(summary: String, stages: List<StageDto>): Boolean {
+    val responses = stages.mapNotNull { agentResponse(it) }
+    if (responses.isEmpty()) return false
+    return skeleton(summary) == skeleton(responses.joinToString(""))
+}
+
+/** The text with everything the joining could have changed taken out: bullets and whitespace. */
+private fun skeleton(text: String): String =
+    text.filterNot { it.isWhitespace() || it == '-' || it == '*' || it == '•' }
+
+/** What the agent said at the end of a stage, if it said anything. */
+internal fun agentResponse(stage: StageDto): String? = (stage.output as? JsonObject)
+    ?.get("agentResponse")
+    ?.jsonPrimitive
+    ?.contentOrNull
+    ?.takeIf { it.isNotBlank() }
+
+/** "3 строки" — a count a person reads, so the folded log says how much is behind it. */
+internal fun logCountLabel(count: Int): String {
+    val word = when {
+        count % 100 in 11..14 -> "строк"
+        count % 10 == 1 -> "строка"
+        count % 10 in 2..4 -> "строки"
+        else -> "строк"
+    }
+    return "$count $word"
+}
+
+/**
+ * A section that is a header until it is asked for: the log and the raw worker payload are both
+ * reference material, and both are long enough to be the whole screen when they are not.
+ */
+@Composable
+private fun CollapsibleSection(
+    title: String,
+    note: String?,
+    expanded: Boolean,
+    onToggle: () -> Unit,
+    content: @Composable () -> Unit,
+) {
+    Column(modifier = Modifier.fillMaxWidth()) {
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .clip(RoundedCornerShape(AppTheme.Radius))
+                .clickable(role = Role.Button, onClick = onToggle)
+                .padding(vertical = 4.dp),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            if (expanded) DownIcon(AppTheme.Muted, size = 14.dp) else ForwardIcon(AppTheme.Muted, size = 14.dp)
+            Spacer(Modifier.width(8.dp))
+            SectionTitle(title)
+            if (note != null) {
+                Spacer(Modifier.width(6.dp))
+                Text(text = "· $note", style = AppTheme.Label, color = AppTheme.Disabled)
+            }
+        }
+        if (expanded) {
+            Spacer(Modifier.height(8.dp))
+            content()
         }
     }
 }
@@ -322,9 +436,23 @@ private fun FileDiffCard(file: FileDiff, expanded: Boolean, onToggle: () -> Unit
     }
 }
 
+/**
+ * One stage: who ran it, how it ended, what it spent — and, in full, what the agent wrote.
+ *
+ * Boxed rather than laid straight into the page as it was: a pipeline of three stages used to run
+ * together into one column of prose with a status word floating in it, and the agent's own text is
+ * the part of this page most worth reading, so it gets a frame of its own.
+ */
 @Composable
-private fun StageRow(stage: StageDto) {
-    Column(modifier = Modifier.fillMaxWidth()) {
+private fun StageCard(stage: StageDto) {
+    Column(
+        modifier = Modifier
+            .fillMaxWidth()
+            .clip(RoundedCornerShape(AppTheme.Radius))
+            .border(1.dp, AppTheme.Border, RoundedCornerShape(AppTheme.Radius))
+            .background(AppTheme.Background, RoundedCornerShape(AppTheme.Radius))
+            .padding(12.dp),
+    ) {
         Row(verticalAlignment = Alignment.CenterVertically) {
             Text(
                 text = stage.role,
@@ -359,17 +487,18 @@ private fun StageRow(stage: StageDto) {
             )
         }
 
-        val response = (stage.output as? JsonObject)
-            ?.get("agentResponse")
-            ?.jsonPrimitive
-            ?.contentOrNull
-            ?.takeIf { it.isNotBlank() }
-        if (response != null) {
+        stage.errorMessage?.takeIf { it.isNotBlank() }?.let { message ->
             Spacer(Modifier.height(6.dp))
+            Text(text = message, style = AppTheme.Label, color = AppTheme.Danger)
+        }
+
+        val response = remember(stage.output) { agentResponse(stage) }
+        if (response != null) {
+            Spacer(Modifier.height(8.dp))
             // What the agent said at the end of the stage — its whole report, Markdown and all.
             MarkdownText(text = response, style = AppTheme.Body, color = AppTheme.Foreground)
         } else if (stage.output != null) {
-            Spacer(Modifier.height(6.dp))
+            Spacer(Modifier.height(8.dp))
             // No prose from the agent — whatever the stage did leave behind, foldable.
             JsonViewer(element = stage.output, rootLabel = "вывод этапа")
         }
@@ -400,26 +529,32 @@ private fun LogLine(log: LogEntryDto) {
     }
 }
 
+/** The word and colour a run's status wears, shared by the badge and the detail page's fact grid. */
+internal fun runStatusPresentation(status: String): Pair<String, Color> = when (status) {
+    "pending" -> "в очереди" to AppTheme.Muted
+    "running" -> "выполняется" to AppTheme.Warning
+    // The one non-terminal state that needs a person: coloured, unlike the other in-flight ones.
+    "waiting_input" -> "ждёт ответа" to AppTheme.Accent
+    "succeeded" -> "успешно" to AppTheme.Success
+    "failed" -> "ошибка" to AppTheme.Danger
+    "cancelled" -> "отменён" to AppTheme.Disabled
+    else -> status to AppTheme.Muted
+}
+
+/**
+ * A run's status the way GitHub's workflow list wears it: the state disc plus a word in the same
+ * colour, no filled pill — the disc is the signal and the word only spells it out.
+ */
 @Composable
 internal fun RunStatusBadge(status: String) {
-    val (label, color) = when (status) {
-        "pending" -> "в очереди" to AppTheme.Muted
-        "running" -> "выполняется" to AppTheme.Muted
-        // The one non-terminal state that needs a person: coloured, unlike the other in-flight ones.
-        "waiting_input" -> "ждёт ответа" to AppTheme.Primary
-        "succeeded" -> "успешно" to AppTheme.Primary
-        "failed" -> "ошибка" to AppTheme.Danger
-        "cancelled" -> "отменён" to AppTheme.Disabled
-        else -> status to AppTheme.Muted
+    val (label, color) = runStatusPresentation(status)
+    Row(
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(5.dp),
+    ) {
+        StatusIcon(status, size = 15.dp)
+        Text(text = label, style = AppTheme.Label, color = color)
     }
-    Text(
-        text = label,
-        style = AppTheme.Label,
-        color = AppTheme.PrimaryForeground,
-        modifier = Modifier
-            .background(color, RoundedCornerShape(999.dp))
-            .padding(horizontal = 10.dp, vertical = 3.dp),
-    )
 }
 
 @Composable

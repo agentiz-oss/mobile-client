@@ -1,20 +1,16 @@
 package com.example.app.screens
 
 import androidx.compose.foundation.background
-import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
-import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
-import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.lazy.LazyColumn
-import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
@@ -25,14 +21,22 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.draw.clip
 import androidx.compose.ui.semantics.Role
+import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import com.composeunstyled.Text
 import com.example.app.components.AppScaffold
+import com.example.app.components.CalendarIcon
+import com.example.app.components.ForwardIcon
+import com.example.app.components.GroupedCard
+import com.example.app.components.InsetDivider
 import com.example.app.components.MenuEntry
+import com.example.app.components.MetaChip
 import com.example.app.components.PullToRefresh
+import com.example.app.components.SectionHeader
+import com.example.app.components.StatusIcon
+import com.example.app.components.StopwatchIcon
 import com.example.app.data.AgentizApi
 import com.example.app.data.ApiException
 import com.example.app.data.RunBoardDto
@@ -112,9 +116,12 @@ fun RunsScreen(
                 },
                 modifier = Modifier.fillMaxSize(),
             ) {
+                // The GitHub-mobile block layout: a grey page carrying one white card per section,
+                // the rows inside split by inset hairlines. A section is one item — the board is
+                // capped on the server, so the card never grows past what a screen of rows costs.
                 LazyColumn(
-                    modifier = Modifier.fillMaxSize(),
-                    contentPadding = PaddingValues(24.dp),
+                    modifier = Modifier.fillMaxSize().background(AppTheme.PageBackground),
+                    contentPadding = PaddingValues(16.dp),
                     verticalArrangement = Arrangement.spacedBy(12.dp),
                 ) {
                     error?.let { message ->
@@ -123,31 +130,38 @@ fun RunsScreen(
                         }
                     }
 
-                    item(key = "active-title") { SectionTitle("Идут сейчас (${current.active.size})") }
+                    item(key = "active-title") { SectionHeader("Идут сейчас (${current.active.size})") }
 
-                    if (current.active.isEmpty()) {
-                        item(key = "active-empty") {
-                            Box(
-                                modifier = Modifier.fillMaxWidth(),
-                                contentAlignment = Alignment.Center,
-                            ) {
-                                Text(
-                                    text = "Сейчас ничего не выполняется.",
-                                    style = AppTheme.Body,
-                                    color = AppTheme.Muted,
-                                )
+                    item(key = "active-card") {
+                        GroupedCard {
+                            if (current.active.isEmpty()) {
+                                Box(
+                                    modifier = Modifier.fillMaxWidth().padding(16.dp),
+                                    contentAlignment = Alignment.Center,
+                                ) {
+                                    Text(
+                                        text = "Сейчас ничего не выполняется.",
+                                        style = AppTheme.Body,
+                                        color = AppTheme.Muted,
+                                    )
+                                }
+                            }
+                            current.active.forEachIndexed { index, run ->
+                                if (index > 0) InsetDivider(start = RowDividerInset)
+                                RunBoardRow(run = run, live = true, onOpenRun = onOpenRun)
                             }
                         }
                     }
 
-                    items(current.active, key = { it.id }) { run ->
-                        RunBoardCard(run = run, live = true, onOpenRun = onOpenRun)
-                    }
-
                     if (current.recent.isNotEmpty()) {
-                        item(key = "recent-title") { SectionTitle("Завершились недавно") }
-                        items(current.recent, key = { it.id }) { run ->
-                            RunBoardCard(run = run, live = false, onOpenRun = onOpenRun)
+                        item(key = "recent-title") { SectionHeader("Завершились недавно") }
+                        item(key = "recent-card") {
+                            GroupedCard {
+                                current.recent.forEachIndexed { index, run ->
+                                    if (index > 0) InsetDivider(start = RowDividerInset)
+                                    RunBoardRow(run = run, live = false, onOpenRun = onOpenRun)
+                                }
+                            }
                         }
                     }
                 }
@@ -157,11 +171,21 @@ fun RunsScreen(
 }
 
 /**
- * One run as a row of the board. A live run is summarised by where it got to and its newest log
- * line; a finished one by what it concluded — the two are what the reader is asking in each case.
+ * Dividers align with the text of a row, past the 20.dp status disc and the 12.dp gap after it —
+ * the GitHub convention that makes the hairline read as a seam between rows, not a strike through
+ * the discs.
+ */
+private val RowDividerInset = 48.dp
+
+/**
+ * One run as a row of the board's card, laid out the way GitHub's app lists workflow runs: the
+ * state disc leading, the title over its context line, the measurables worn as chips under them,
+ * and a chevron only when the row goes somewhere. A live run is summarised by where it got to and
+ * its newest log line; a finished one by what it concluded — the two are what the reader is asking
+ * in each case.
  */
 @Composable
-private fun RunBoardCard(
+private fun RunBoardRow(
     run: RunDto,
     live: Boolean,
     onOpenRun: (projectId: String, projectName: String?, taskId: String, runId: String) -> Unit,
@@ -171,75 +195,91 @@ private fun RunBoardCard(
     val open = run.taskId?.let { taskId ->
         { onOpenRun(run.projectId ?: "", run.projectName, taskId, run.id) }
     }
-    Column(
+    Row(
         modifier = Modifier
             .fillMaxWidth()
-            .clip(RoundedCornerShape(AppTheme.Radius))
             .let { base -> if (open != null) base.clickable(role = Role.Button, onClick = open) else base }
-            .border(1.dp, AppTheme.Border, RoundedCornerShape(AppTheme.Radius))
-            .background(AppTheme.Surface, RoundedCornerShape(AppTheme.Radius))
-            .padding(20.dp),
+            .padding(horizontal = 16.dp, vertical = 12.dp),
+        horizontalArrangement = Arrangement.spacedBy(12.dp),
     ) {
-        Row(
-            modifier = Modifier.fillMaxWidth(),
-            horizontalArrangement = Arrangement.SpaceBetween,
-            verticalAlignment = Alignment.CenterVertically,
-        ) {
-            Text(
-                text = run.taskTitle?.takeIf { it.isNotBlank() } ?: "Запуск",
-                style = AppTheme.Subtitle,
-                color = AppTheme.Foreground,
-                maxLines = 2,
-                overflow = TextOverflow.Ellipsis,
-                modifier = Modifier.weight(1f).padding(end = 12.dp),
-            )
-            RunStatusBadge(run.status)
+        // Top-aligned beside the title rather than centred in the row: a row grows with its
+        // preview text, and the disc belongs to the run's name, not to the middle of the prose.
+        Box(modifier = Modifier.padding(top = 2.dp)) { StatusIcon(run.status, size = 20.dp) }
+
+        Column(modifier = Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+            Column {
+                Text(
+                    text = run.taskTitle?.takeIf { it.isNotBlank() } ?: "Запуск",
+                    style = AppTheme.Body.copy(fontWeight = FontWeight.SemiBold),
+                    color = AppTheme.Foreground,
+                    maxLines = 2,
+                    overflow = TextOverflow.Ellipsis,
+                )
+                val context = listOfNotNull(
+                    run.projectName?.takeIf { it.isNotBlank() },
+                    run.trigger.takeIf { it.isNotBlank() },
+                ).joinToString(" · ")
+                if (context.isNotBlank()) {
+                    Text(
+                        text = context,
+                        style = AppTheme.Footnote,
+                        color = AppTheme.Muted,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis,
+                    )
+                }
+            }
+
+            Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                val duration = formatDuration(run.startedAt, run.finishedAt)
+                if (!live && duration != null) {
+                    MetaChip(duration) { tint -> StopwatchIcon(tint, size = 13.dp) }
+                }
+                formatTimestamp(
+                    if (live) run.startedAt ?: run.createdAt else run.finishedAt ?: run.createdAt,
+                )?.let { stamp ->
+                    MetaChip(stamp) { tint -> CalendarIcon(tint, size = 13.dp) }
+                }
+                tokensBadge(run.usage)?.let { MetaChip(it) }
+            }
+
+            val progress = stageProgress(run)
+            if (progress != null) {
+                Text(text = progress, style = AppTheme.Footnote, color = AppTheme.Muted)
+            }
+
+            if (run.pendingInteractions > 0) {
+                Text(
+                    text = if (run.pendingInteractions == 1) "ждёт ответа" else "ждёт ответа (${run.pendingInteractions})",
+                    style = AppTheme.Label,
+                    color = AppTheme.PrimaryForeground,
+                    modifier = Modifier
+                        .background(AppTheme.Accent, RoundedCornerShape(999.dp))
+                        .padding(horizontal = 10.dp, vertical = 3.dp),
+                )
+            }
+
+            val tail = if (live) {
+                run.lastLog?.message?.takeIf { it.isNotBlank() }
+            } else {
+                run.errorMessage?.takeIf { it.isNotBlank() } ?: run.resultSummary?.takeIf { it.isNotBlank() }
+            }
+            if (tail != null) {
+                Text(
+                    // A capped preview of agent text: the markup comes off instead of being rendered.
+                    text = markdownToPlainText(tail),
+                    style = AppTheme.Footnote,
+                    color = if (!live && run.errorMessage?.isNotBlank() == true) AppTheme.Danger else AppTheme.Muted,
+                    maxLines = 3,
+                    overflow = TextOverflow.Ellipsis,
+                )
+            }
         }
 
-        val context = listOfNotNull(
-            run.projectName?.takeIf { it.isNotBlank() },
-            run.trigger.takeIf { it.isNotBlank() },
-            formatTimestamp(if (live) run.startedAt ?: run.createdAt else run.finishedAt ?: run.createdAt),
-            tokensBadge(run.usage),
-        ).joinToString(" · ")
-        if (context.isNotBlank()) {
-            Spacer(Modifier.height(4.dp))
-            Text(text = context, style = AppTheme.Label, color = AppTheme.Muted)
-        }
-
-        val progress = stageProgress(run)
-        if (progress != null) {
-            Spacer(Modifier.height(8.dp))
-            Text(text = progress, style = AppTheme.Label, color = AppTheme.Muted)
-        }
-
-        if (run.pendingInteractions > 0) {
-            Spacer(Modifier.height(8.dp))
-            Text(
-                text = if (run.pendingInteractions == 1) "ждёт ответа" else "ждёт ответа (${run.pendingInteractions})",
-                style = AppTheme.Label,
-                color = AppTheme.PrimaryForeground,
-                modifier = Modifier
-                    .background(AppTheme.Primary, RoundedCornerShape(999.dp))
-                    .padding(horizontal = 10.dp, vertical = 3.dp),
-            )
-        }
-
-        val tail = if (live) {
-            run.lastLog?.message?.takeIf { it.isNotBlank() }
-        } else {
-            run.errorMessage?.takeIf { it.isNotBlank() } ?: run.resultSummary?.takeIf { it.isNotBlank() }
-        }
-        if (tail != null) {
-            Spacer(Modifier.height(8.dp))
-            Text(
-                // A capped preview of agent text: the markup comes off instead of being rendered.
-                text = markdownToPlainText(tail),
-                style = AppTheme.Body,
-                color = if (!live && run.errorMessage?.isNotBlank() == true) AppTheme.Danger else AppTheme.Muted,
-                maxLines = 3,
-                overflow = TextOverflow.Ellipsis,
-            )
+        if (open != null) {
+            Box(modifier = Modifier.align(Alignment.CenterVertically)) {
+                ForwardIcon(AppTheme.Muted, size = 14.dp)
+            }
         }
     }
 }

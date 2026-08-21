@@ -1,5 +1,6 @@
 package com.example.app.screens
 
+import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
@@ -19,6 +20,9 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
 import com.composeunstyled.Text
 import com.example.app.components.AppScaffold
+import com.example.app.components.Fact
+import com.example.app.components.FactGrid
+import com.example.app.components.GroupedCard
 import com.example.app.components.MenuEntry
 import com.example.app.data.AgentizApi
 import com.example.app.data.ApiException
@@ -161,8 +165,9 @@ fun RunDetailScreen(
             else -> Column(
                 modifier = Modifier
                     .fillMaxSize()
+                    .background(AppTheme.PageBackground)
                     .verticalScroll(rememberScrollState())
-                    .padding(24.dp),
+                    .padding(16.dp),
             ) {
                 if (error != null) {
                     Text(text = error!!, style = AppTheme.Label, color = AppTheme.Danger)
@@ -175,6 +180,23 @@ fun RunDetailScreen(
                     projectName = current.projectName,
                     onClick = { onOpenTask(current.projectId, current.projectName) },
                 )
+                Spacer(Modifier.height(12.dp))
+                // The run's headline numbers as one fact strip, the way GitHub heads a workflow
+                // run with Status / Duration — the prose below is for whoever reads past them.
+                GroupedCard {
+                    FactGrid(
+                        facts = buildList {
+                            val (label, color) = runStatusPresentation(current.status)
+                            add(Fact("Статус", label, color))
+                            formatDuration(current.startedAt, current.finishedAt)?.let {
+                                add(Fact("Длительность", it))
+                            }
+                            current.usage?.let(::totalTokens)?.takeIf { it > 0 }?.let {
+                                add(Fact("Токены", formatTokens(it)))
+                            }
+                        },
+                    )
+                }
                 Spacer(Modifier.height(16.dp))
                 proposal?.let { pending ->
                     ProposalReviewSection(

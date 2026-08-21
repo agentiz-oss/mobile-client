@@ -93,6 +93,25 @@ internal fun formatTimestamp(iso: String?): String? {
     return "${two(day)}.${two(month)}.$year ${two(ofDay / 60)}:${two(ofDay % 60)}"
 }
 
+/**
+ * `1 ч 12 мин` between two UTC instants, `5 мин` under an hour, `<1 мин` when they land in the
+ * same minute — the chip beside a finished run. Minute precision is all [epochMinutes] carries,
+ * and all a pipeline's timescale deserves. Null when either end is missing or unparseable.
+ */
+internal fun formatDuration(startIso: String?, endIso: String?): String? {
+    if (startIso.isNullOrBlank() || endIso.isNullOrBlank()) return null
+    val start = epochMinutes(startIso) ?: return null
+    val end = epochMinutes(endIso) ?: return null
+    val minutes = end - start
+    if (minutes < 0) return null
+    val hours = minutes / 60
+    return when {
+        hours > 0 -> "$hours ч ${minutes % 60} мин"
+        minutes == 0L -> "<1 мин"
+        else -> "$minutes мин"
+    }
+}
+
 /** The pre-offset rendering, kept for inputs that carry a date but no parseable time. */
 private fun fallbackTimestamp(iso: String): String? {
     val dateBits = iso.substringBefore('T', missingDelimiterValue = "").split('-')

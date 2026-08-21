@@ -22,8 +22,11 @@ import androidx.compose.ui.unit.dp
  * earlier glyphs disagree with each other, so they all share the geometry below instead.
  *
  * Every icon is authored on a 24-unit square in fractional coordinates, stroked at one ratio with
- * round caps and joins, and sized by the call site rather than by itself. That is the whole style:
- * outline only, no fills, nothing that needs a second colour to read.
+ * round caps and joins, and sized by the call site rather than by itself. The proportions follow
+ * GitHub's Octicons, which is what the glyph set here mirrors. The style is outline only, with one
+ * deliberate exception: *state* icons (the `*-fill` circle family at the bottom) are filled discs
+ * with the mark knocked out in white — at list-row size a green outline and a red outline read the
+ * same, a green disc and a red disc do not.
  */
 
 /** The nominal box an icon is drawn in. Call sites override it; the proportions never change. */
@@ -310,6 +313,156 @@ fun RefreshIcon(tint: Color, size: Dp = IconSize) {
             lineTo(s.x(0.7f), s.y(0.44f))
         }
         drawPath(head, tint, style = s.stroke)
+    }
+}
+
+/** A magnifier: a ring with a handle running off to the corner, Octicons' `search`. */
+@Composable
+fun SearchIcon(tint: Color, size: Dp = IconSize) {
+    Icon(size) { s ->
+        circle(s, tint, 0.44f, 0.44f, 0.26f)
+        line(s, tint, 0.64f, 0.64f, 0.86f, 0.86f)
+    }
+}
+
+/** A five-point star outline, Octicons' `star` — favourites and their tile. */
+@Composable
+fun StarIcon(tint: Color, size: Dp = IconSize) {
+    Icon(size) { s ->
+        val path = Path()
+        repeat(10) { i ->
+            // Alternating outer and inner vertices around the centre, crown up.
+            val r = if (i % 2 == 0) 0.42f else 0.18f
+            val angle = (i * 36f - 90f) * (kotlin.math.PI.toFloat() / 180f)
+            val px = s.x(0.5f + r * kotlin.math.cos(angle))
+            val py = s.y(0.54f + r * kotlin.math.sin(angle))
+            if (i == 0) path.moveTo(px, py) else path.lineTo(px, py)
+        }
+        path.close()
+        drawPath(path, tint, style = s.stroke)
+    }
+}
+
+/** Octicons' `issue-opened`: a ring with a filled dot at its centre — a task that stands open. */
+@Composable
+fun IssueOpenedIcon(tint: Color, size: Dp = IconSize) {
+    Icon(size) { s ->
+        circle(s, tint, 0.5f, 0.5f, 0.36f)
+        drawCircle(tint, radius = s.w * 0.1f, center = s.at(0.5f, 0.5f))
+    }
+}
+
+/** Octicons' `git-branch`: a trunk of two commits with one branch hanging off to the side. */
+@Composable
+fun GitBranchIcon(tint: Color, size: Dp = IconSize) {
+    Icon(size) { s ->
+        circle(s, tint, 0.3f, 0.2f, 0.1f)
+        circle(s, tint, 0.3f, 0.8f, 0.1f)
+        circle(s, tint, 0.74f, 0.28f, 0.1f)
+        line(s, tint, 0.3f, 0.3f, 0.3f, 0.7f)
+        // The branch curves down from its commit into the trunk rather than teeing straight in.
+        val path = Path().apply {
+            moveTo(s.x(0.74f), s.y(0.38f))
+            quadraticTo(s.x(0.74f), s.y(0.56f), s.x(0.4f), s.y(0.58f))
+        }
+        drawPath(path, tint, style = s.stroke)
+    }
+}
+
+/** Octicons' `git-pull-request`: a branch flowing into a target trunk beside it. */
+@Composable
+fun GitPullRequestIcon(tint: Color, size: Dp = IconSize) {
+    Icon(size) { s ->
+        circle(s, tint, 0.28f, 0.2f, 0.1f)
+        circle(s, tint, 0.28f, 0.8f, 0.1f)
+        circle(s, tint, 0.74f, 0.8f, 0.1f)
+        line(s, tint, 0.28f, 0.3f, 0.28f, 0.7f)
+        // The incoming branch: an elbow from the source commit's side into the target's trunk.
+        val path = Path().apply {
+            moveTo(s.x(0.5f), s.y(0.16f))
+            lineTo(s.x(0.62f), s.y(0.16f))
+            quadraticTo(s.x(0.74f), s.y(0.16f), s.x(0.74f), s.y(0.28f))
+            lineTo(s.x(0.74f), s.y(0.7f))
+        }
+        drawPath(path, tint, style = s.stroke)
+    }
+}
+
+/** A stopwatch, Octicons' `stopwatch` — how long something took. */
+@Composable
+fun StopwatchIcon(tint: Color, size: Dp = IconSize) {
+    Icon(size) { s ->
+        circle(s, tint, 0.5f, 0.58f, 0.3f)
+        // The winder: a flat button over a short stem, which is what says "watch" over "circle".
+        line(s, tint, 0.4f, 0.1f, 0.6f, 0.1f)
+        line(s, tint, 0.5f, 0.12f, 0.5f, 0.26f)
+        // The hand, caught mid-sweep.
+        line(s, tint, 0.5f, 0.58f, 0.64f, 0.44f)
+    }
+}
+
+/** A calendar, Octicons' `calendar`: the frame, its binding rings and the rule under them. */
+@Composable
+fun CalendarIcon(tint: Color, size: Dp = IconSize) {
+    Icon(size) { s ->
+        drawRoundRect(
+            color = tint,
+            topLeft = s.at(0.14f, 0.18f),
+            size = Size(s.x(0.72f), s.y(0.68f)),
+            cornerRadius = CornerRadius(s.x(0.08f), s.y(0.08f)),
+            style = s.stroke,
+        )
+        line(s, tint, 0.14f, 0.4f, 0.86f, 0.4f)
+        line(s, tint, 0.34f, 0.08f, 0.34f, 0.24f)
+        line(s, tint, 0.66f, 0.08f, 0.66f, 0.24f)
+    }
+}
+
+/**
+ * The filled-circle state family, Octicons' `check-circle-fill` / `x-circle-fill` / `skip-fill`:
+ * a disc in the state's colour with the mark knocked out in [mark]. The mark defaults to white on
+ * the assumption the disc is saturated; a caller putting one on a dark surface passes its own.
+ */
+@Composable
+fun CheckCircleFillIcon(tint: Color, size: Dp = IconSize, mark: Color = Color.White) {
+    Icon(size) { s ->
+        drawCircle(tint, radius = s.w * 0.46f, center = s.at(0.5f, 0.5f))
+        val path = Path().apply {
+            moveTo(s.x(0.3f), s.y(0.52f))
+            lineTo(s.x(0.45f), s.y(0.66f))
+            lineTo(s.x(0.7f), s.y(0.36f))
+        }
+        drawPath(path, mark, style = s.stroke)
+    }
+}
+
+/** The failure disc: [CheckCircleFillIcon]'s red sibling with an X for the mark. */
+@Composable
+fun XCircleFillIcon(tint: Color, size: Dp = IconSize, mark: Color = Color.White) {
+    Icon(size) { s ->
+        drawCircle(tint, radius = s.w * 0.46f, center = s.at(0.5f, 0.5f))
+        line(s, mark, 0.36f, 0.36f, 0.64f, 0.64f)
+        line(s, mark, 0.64f, 0.36f, 0.36f, 0.64f)
+    }
+}
+
+/** The "did not happen" disc — a slash, for cancelled and skipped states. */
+@Composable
+fun SkipCircleFillIcon(tint: Color, size: Dp = IconSize, mark: Color = Color.White) {
+    Icon(size) { s ->
+        drawCircle(tint, radius = s.w * 0.46f, center = s.at(0.5f, 0.5f))
+        line(s, mark, 0.36f, 0.64f, 0.64f, 0.36f)
+    }
+}
+
+/**
+ * Octicons' `dot-fill`: the in-flight states. Deliberately a bare dot rather than a disc with a
+ * mark — a run that is merely queued or working has no verdict to show yet.
+ */
+@Composable
+fun DotFillIcon(tint: Color, size: Dp = IconSize) {
+    Icon(size) { s ->
+        drawCircle(tint, radius = s.w * 0.28f, center = s.at(0.5f, 0.5f))
     }
 }
 
