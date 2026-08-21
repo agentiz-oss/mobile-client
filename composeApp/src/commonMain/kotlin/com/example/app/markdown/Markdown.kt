@@ -19,8 +19,8 @@ import com.example.app.theme.AppTheme
  * Agents answer in Markdown whether or not anyone asked them to — a question arrives with `code`
  * spans in it, a run's summary comes as a bulleted list — so the phone either renders it or shows
  * the punctuation raw. What is implemented here is the subset that actually turns up in that
- * output: headings, lists, fenced and inline code, quotes, rules, emphasis and links. Anything
- * outside it (tables, footnotes, HTML, reference links) is left as the literal characters the agent
+ * output: headings, lists, fenced and inline code, quotes, rules, tables, emphasis and links.
+ * Anything outside it (footnotes, HTML, reference links) is left as the literal characters the agent
  * typed, which is the same thing the app did before this file existed — a shape we do not know must
  * never swallow the text it wraps.
  *
@@ -48,7 +48,24 @@ internal sealed interface MarkdownBlock {
     data class Quote(val text: String) : MarkdownBlock
 
     data object Divider : MarkdownBlock
+
+    /**
+     * A GFM pipe table. Every row is padded to [columns] cells, and a row with *more* cells than
+     * the header widens the whole table instead of losing its tail — GFM drops that overflow, but
+     * an agent writing a table by hand miscounts a pipe far more often than it means to hide a
+     * cell. [alignments] is what the delimiter row asked for, one entry per column.
+     */
+    data class Table(
+        val header: List<String>,
+        val rows: List<List<String>>,
+        val alignments: List<MarkdownAlign>,
+    ) : MarkdownBlock {
+        val columns: Int get() = header.size
+    }
 }
+
+/** What a table's delimiter row (`:---`, `:---:`, `---:`) said about a column. */
+enum class MarkdownAlign { Start, Center, End }
 
 /** Deeper nesting than this is rendered flat: a phone runs out of width long before it runs out. */
 private const val MAX_LIST_INDENT = 3
@@ -60,15 +77,22 @@ private val BULLET = Regex("""^(\s*)([-*+])\s+(.*)$""")
 private val ORDERED = Regex("""^(\s*)(\d{1,9})([.)])\s+(.*)$""")
 private val QUOTE = Regex("""^\s{0,3}>\s?(.*)$""")
 
-/** Whether a line opens a block of its own, and therefore ends whatever was being accumulated. */
-private fun startsBlock(line: String): Boolean =
-    line.isBlank() ||
+/**
+ * Whether the line at [index] opens a block of its own, and therefore ends whatever was being
+ * accumulated. Takes the whole document because a table is only a table when the *next* line is its
+ * delimiter row.
+ */
+private fun startsBlock(lines: List<String>, index: Int): Boolean {
+    val line = lines[index]
+    return line.isBlank() ||
         FENCE.matches(line.trimEnd()) ||
         HEADING.matches(line) ||
         DIVIDER.matches(line.trimEnd()) ||
         BULLET.matches(line) ||
         ORDERED.matches(line) ||
-        QUOTE.matches(line)
+        QUOTE.matches(line) ||
+        readTable(lines, index) != null
+}
 
 /** The document as blocks. Never throws and never drops input: unparsed lines stay paragraphs. */
 internal fun parseMarkdown(source: String): List<MarkdownBlock> {
@@ -124,6 +148,14 @@ internal fun parseMarkdown(source: String): List<MarkdownBlock> {
             continue
         }
 
+        val table = readTable(lines, index)
+        if (table != null) {
+            flushParagraph()
+            blocks += table.block
+            index = table.end
+            continue
+        }
+
         val quote = QUOTE.matchEntire(line)
         if (quote != null) {
             flushParagraph()
@@ -133,7 +165,7 @@ internal fun parseMarkdown(source: String): List<MarkdownBlock> {
                 val next = QUOTE.matchEntire(lines[index])
                 if (next != null) {
                     body += next.groupValues[1]
-                } else if (lines[index].isBlank() || startsBlock(lines[index])) {
+                } else if (lines[index].isBlank() || startsBlock(lines, index)) {
                     break
                 } else {
                     // A wrapped quote whose continuation lost its "> " — the paragraph belongs to
@@ -155,7 +187,7 @@ internal fun parseMarkdown(source: String): List<MarkdownBlock> {
             val body = StringBuilder(if (bullet != null) bullet.groupValues[3] else ordered!!.groupValues[4])
             index++
             // Lazy continuation: an item that wrapped onto the next line is one item, not two.
-            while (index < lines.size && !startsBlock(lines[index])) {
+            while (index < lines.size && !startsBlock(lines, index)) {
                 body.append('\n').append(lines[index].trim())
                 index++
             }
@@ -175,6 +207,90 @@ internal fun parseMarkdown(source: String): List<MarkdownBlock> {
     }
     flushParagraph()
     return blocks
+}
+
+private class ParsedTable(val block: MarkdownBlock.Table, val end: Int)
+
+/** A delimiter cell: dashes, with a colon on the side the column is pulled to. */
+private val DELIMITER_CELL = Regex("""^:?-+:?$""")
+
+/**
+ * The table starting at [index], or null when this is just prose with a pipe in it.
+ *
+ * Recognised the way GFM does — a header row, then a delimiter row with the same number of cells —
+ * because that pair is what makes a table unmistakable. Anything short of it stays a paragraph, so
+ * a sentence about `a | b` is never quietly turned into a one-cell table.
+ */
+private fun readTable(lines: List<String>, index: Int): ParsedTable? {
+    if (index + 1 >= lines.size) return null
+    if (!lines[index].contains('|')) return null
+    val header = splitRow(lines[index])
+    if (header.size < 2) return null
+    val delimiters = splitRow(lines[index + 1])
+    if (delimiters.size != header.size) return null
+    if (delimiters.any { !DELIMITER_CELL.matches(it) }) return null
+
+    val rows = mutableListOf<List<String>>()
+    var cursor = index + 2
+    while (cursor < lines.size) {
+        val line = lines[cursor]
+        // A table ends at the first line that is not a row of it — including a line that starts
+        // some other block and merely happens to carry a pipe.
+        if (line.isBlank() || !line.contains('|')) break
+        if (HEADING.matches(line) || FENCE.matches(line.trimEnd()) || QUOTE.matches(line)) break
+        rows += splitRow(line)
+        cursor++
+    }
+
+    val columns = maxOf(header.size, rows.maxOfOrNull { it.size } ?: 0)
+    fun List<String>.padded() = List(columns) { getOrElse(it) { "" } }
+    return ParsedTable(
+        MarkdownBlock.Table(
+            header = header.padded(),
+            rows = rows.map { it.padded() },
+            alignments = List(columns) { column ->
+                val cell = delimiters.getOrNull(column).orEmpty()
+                when {
+                    cell.startsWith(':') && cell.endsWith(':') -> MarkdownAlign.Center
+                    cell.endsWith(':') -> MarkdownAlign.End
+                    else -> MarkdownAlign.Start
+                }
+            },
+        ),
+        end = cursor,
+    )
+}
+
+/**
+ * One row's cells. Splits on unescaped pipes and on those only: a pipe inside a code span is rare
+ * enough next to `\|`, which is what an agent writes when it means a literal one.
+ */
+private fun splitRow(line: String): List<String> {
+    val cells = mutableListOf<String>()
+    val cell = StringBuilder()
+    var index = 0
+    while (index < line.length) {
+        val char = line[index]
+        if (char == '\\' && index + 1 < line.length && line[index + 1] == '|') {
+            cell.append('|')
+            index += 2
+            continue
+        }
+        if (char == '|') {
+            cells += cell.toString().trim()
+            cell.clear()
+            index++
+            continue
+        }
+        cell.append(char)
+        index++
+    }
+    cells += cell.toString().trim()
+    // The leading and trailing pipes most tables are written with each produce an empty cell that
+    // was never a column; a genuinely empty first or last column keeps its place.
+    if (cells.size > 1 && cells.first().isEmpty() && line.trimStart().startsWith("|")) cells.removeAt(0)
+    if (cells.size > 1 && cells.last().isEmpty() && line.trimEnd().endsWith("|")) cells.removeAt(cells.size - 1)
+    return cells
 }
 
 /** Character-level styling shared by every block; sits next to the theme it is drawn from. */
@@ -441,6 +557,9 @@ fun markdownToPlainText(source: String): String =
             is MarkdownBlock.Quote -> markdownInline(block.text).text
             is MarkdownBlock.ListItem -> "${block.marker ?: "•"} ${markdownInline(block.text).text}"
             is MarkdownBlock.Code -> block.code
+            is MarkdownBlock.Table -> (listOf(block.header) + block.rows).joinToString("\n") { row ->
+                row.joinToString(" | ") { markdownInline(it).text }
+            }
             MarkdownBlock.Divider -> null
         }
     }.joinToString("\n").trim()

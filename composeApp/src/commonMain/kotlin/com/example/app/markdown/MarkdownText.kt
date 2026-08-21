@@ -24,6 +24,7 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.isSpecified
 import com.composeunstyled.Text
@@ -77,6 +78,7 @@ fun MarkdownText(
                     is MarkdownBlock.ListItem -> ListItemRow(block, style, color)
                     is MarkdownBlock.Code -> CodeBlock(block, style, color)
                     is MarkdownBlock.Quote -> QuoteBlock(block, style)
+                    is MarkdownBlock.Table -> TableBlock(block, style, color)
                     MarkdownBlock.Divider -> Box(
                         modifier = Modifier.fillMaxWidth().height(1.dp).background(AppTheme.Border),
                     )
@@ -144,6 +146,68 @@ private fun CodeBlock(block: MarkdownBlock.Code, style: TextStyle, color: Color)
             style = style.scaled(0.9f).copy(fontFamily = FontFamily.Monospace),
             color = color,
         )
+    }
+}
+
+@Composable
+private fun TableBlock(block: MarkdownBlock.Table, style: TextStyle, color: Color) {
+    // Columns share the width in proportion to their longest cell, clamped at both ends: a table of
+    // «Слой | Файлы | Что» is mostly the last column, and equal thirds would wrap it to a ribbon
+    // while two words sit alone on the left. Cells still wrap — a phone cannot scroll a table
+    // sideways and keep its header readable.
+    val weights = remember(block) {
+        List(block.columns) { column ->
+            val widest = (listOf(block.header) + block.rows).maxOf { it[column].length }
+            widest.coerceIn(MIN_COLUMN_CHARS, MAX_COLUMN_CHARS).toFloat()
+        }
+    }
+    Column(
+        modifier = Modifier
+            .fillMaxWidth()
+            .clip(RoundedCornerShape(8.dp))
+            .border(1.dp, AppTheme.Border, RoundedCornerShape(8.dp)),
+    ) {
+        TableRow(block.header, block.alignments, weights, style, color, header = true)
+        block.rows.forEachIndexed { index, row ->
+            Box(modifier = Modifier.fillMaxWidth().height(1.dp).background(AppTheme.Border))
+            key(index) { TableRow(row, block.alignments, weights, style, color, header = false) }
+        }
+    }
+}
+
+/** Under this a column stops shrinking, over it it stops growing; both are in characters. */
+private const val MIN_COLUMN_CHARS = 6
+private const val MAX_COLUMN_CHARS = 40
+
+@Composable
+private fun TableRow(
+    cells: List<String>,
+    alignments: List<MarkdownAlign>,
+    weights: List<Float>,
+    style: TextStyle,
+    color: Color,
+    header: Boolean,
+) {
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .then(if (header) Modifier.background(AppTheme.Surface) else Modifier)
+            .padding(horizontal = 8.dp, vertical = 6.dp),
+    ) {
+        cells.forEachIndexed { column, cell ->
+            if (column > 0) Spacer(Modifier.width(8.dp))
+            Text(
+                text = markdownInline(cell),
+                style = if (header) style.copy(fontWeight = FontWeight.SemiBold) else style,
+                color = color,
+                textAlign = when (alignments.getOrElse(column) { MarkdownAlign.Start }) {
+                    MarkdownAlign.Start -> TextAlign.Start
+                    MarkdownAlign.Center -> TextAlign.Center
+                    MarkdownAlign.End -> TextAlign.End
+                },
+                modifier = Modifier.weight(weights.getOrElse(column) { 1f }),
+            )
+        }
     }
 }
 

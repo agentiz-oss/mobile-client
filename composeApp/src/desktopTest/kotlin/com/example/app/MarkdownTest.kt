@@ -6,6 +6,7 @@ import androidx.compose.ui.test.v2.runComposeUiTest
 import androidx.compose.ui.text.font.FontStyle
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextDecoration
+import com.example.app.markdown.MarkdownAlign
 import com.example.app.markdown.MarkdownBlock
 import com.example.app.markdown.markdownInline
 import com.example.app.markdown.markdownToPlainText
@@ -187,6 +188,79 @@ class MarkdownTest {
     @Test
     fun `brackets that are not a link are left alone`() {
         assertEquals("массив [0] и (скобки)", markdownInline("массив [0] и (скобки)").text)
+    }
+
+    @Test
+    fun `a pipe table becomes a table with its header and rows`() {
+        val table = parseMarkdown(
+            """
+            | Слой | Файлы | Что |
+            | --- | --- | --- |
+            | Ввод | keyboard.js | карта клавиш |
+            | Реестр | registry.js | авто-регистрация |
+            """.trimIndent(),
+        ).single() as MarkdownBlock.Table
+        assertEquals(listOf("Слой", "Файлы", "Что"), table.header)
+        assertEquals(2, table.rows.size)
+        assertEquals(listOf("Ввод", "keyboard.js", "карта клавиш"), table.rows[0])
+    }
+
+    @Test
+    fun `a delimiter row says how its column is aligned`() {
+        val table = parseMarkdown("| a | b | c |\n| :-- | :-: | --: |\n| 1 | 2 | 3 |")
+            .single() as MarkdownBlock.Table
+        assertEquals(
+            listOf(MarkdownAlign.Start, MarkdownAlign.Center, MarkdownAlign.End),
+            table.alignments,
+        )
+    }
+
+    @Test
+    fun `a table ends where the text after it begins`() {
+        val blocks = parseMarkdown("| a | b |\n| --- | --- |\n| 1 | 2 |\nдальше")
+        assertTrue(blocks[0] is MarkdownBlock.Table)
+        assertEquals(MarkdownBlock.Paragraph("дальше"), blocks[1])
+    }
+
+    @Test
+    fun `a table right under a paragraph is still a table`() {
+        val blocks = parseMarkdown("Итог:\n| a | b |\n| --- | --- |\n| 1 | 2 |")
+        assertEquals(MarkdownBlock.Paragraph("Итог:"), blocks[0])
+        assertTrue(blocks[1] is MarkdownBlock.Table)
+    }
+
+    @Test
+    fun `a pipe without a delimiter row stays prose`() {
+        val blocks = parseMarkdown("grep foo | wc -l\nи всё")
+        assertEquals(MarkdownBlock.Paragraph("grep foo | wc -l\nи всё"), blocks.single())
+    }
+
+    @Test
+    fun `an escaped pipe is a character, not a column`() {
+        val table = parseMarkdown("| a | b |\n| --- | --- |\n| x \\| y | z |").single() as MarkdownBlock.Table
+        assertEquals(listOf("x | y", "z"), table.rows.single())
+    }
+
+    @Test
+    fun `a row with an extra cell widens the table instead of losing it`() {
+        val table = parseMarkdown("| a | b |\n| --- | --- |\n| 1 | 2 | 3 |").single() as MarkdownBlock.Table
+        assertEquals(3, table.columns)
+        assertEquals(listOf("a", "b", ""), table.header)
+        assertEquals(listOf("1", "2", "3"), table.rows.single())
+    }
+
+    @Test
+    fun `a table inside a fence is code`() {
+        val blocks = parseMarkdown("```\n| a | b |\n| --- | --- |\n```")
+        assertTrue(blocks.single() is MarkdownBlock.Code)
+    }
+
+    @Test
+    fun `a preview reads a table row as a line`() {
+        assertEquals(
+            "a | b\n1 | 2",
+            markdownToPlainText("| a | b |\n| --- | --- |\n| 1 | 2 |"),
+        )
     }
 
     @Test
