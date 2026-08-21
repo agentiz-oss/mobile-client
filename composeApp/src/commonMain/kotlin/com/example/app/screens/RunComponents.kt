@@ -3,7 +3,9 @@ package com.example.app.screens
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
@@ -11,14 +13,19 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.selection.SelectionContainer
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateMapOf
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -209,24 +216,7 @@ internal fun RunResult(
                 expanded = open,
                 onToggle = { opened[LOG_SECTION] = !open },
             ) {
-                // Keep the process trace selectable: workers can emit details that need to be
-                // copied into an issue or a reply. SelectionContainer provides the native copy
-                // action on touch devices and Cmd/Ctrl+C support on desktop.
-                SelectionContainer {
-                    Column(
-                        // A trace of a few hundred debug lines would otherwise push the rest of the
-                        // page out of reach. Capped and given its own scroll, the log stays
-                        // inspectable without becoming the whole page; heightIn means a short log
-                        // still shrinks.
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .heightIn(max = 260.dp)
-                            .verticalScroll(rememberScrollState()),
-                        verticalArrangement = Arrangement.spacedBy(4.dp),
-                    ) {
-                        run.logs.forEach { LogLine(it) }
-                    }
-                }
+                LogTrace(logs = run.logs)
             }
             // Folded, a running run would show no sign of life at all — the log is the only thing
             // moving while a stage works. Its newest line stays out, and only while that is true.
@@ -505,29 +495,200 @@ private fun StageCard(stage: StageDto) {
     }
 }
 
-/** One line of the run's process trace — every level, so the "thinking" behind a run is visible. */
+/**
+ * The run's process trace: a level filter over the lines, and the lines themselves.
+ *
+ * Which level is being read is deliberately *not* keyed to the run and not remembered anywhere
+ * else — it is a way of looking at the page currently open, and a filter still in force when the
+ * next run is opened would hide lines nobody asked to hide.
+ */
 @Composable
-private fun LogLine(log: LogEntryDto) {
-    val color = when (log.level) {
-        "error" -> AppTheme.Danger
-        "warn" -> AppTheme.Muted
-        "debug" -> AppTheme.Muted
-        else -> AppTheme.Foreground
+private fun LogTrace(logs: List<LogEntryDto>) {
+    var picked by remember { mutableStateOf<String?>(null) }
+    val levels = remember(logs) { logLevelCounts(logs) }
+    // A level the trace no longer contains cannot stay selected: the log grows while a run is
+    // live, and an early page of it may carry levels the tail does not.
+    val selected = picked?.takeIf { level -> levels.any { it.first == level } }
+    val shown = remember(logs, selected) {
+        if (selected == null) logs else logs.filter { it.level == selected }
     }
-    Row(verticalAlignment = Alignment.Top) {
+
+    Column(modifier = Modifier.fillMaxWidth()) {
+        // Only the levels this run actually emitted, so the filter never offers a choice that
+        // empties the box. A single-level trace gets no filter at all — there is nothing to pick.
+        if (levels.size > 1) {
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .horizontalScroll(rememberScrollState()),
+                horizontalArrangement = Arrangement.spacedBy(6.dp),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                LogLevelChip(
+                    label = "все",
+                    count = logs.size,
+                    color = AppTheme.Muted,
+                    selected = selected == null,
+                    onClick = { picked = null },
+                )
+                levels.forEach { (level, count) ->
+                    LogLevelChip(
+                        label = logLevelLabel(level),
+                        count = count,
+                        color = logLevelColor(level),
+                        selected = selected == level,
+                        // Tapping the active level returns to "все": the way back has to be where
+                        // the way in was, not only on a chip at the far left of a scrolled row.
+                        onClick = { picked = if (selected == level) null else level },
+                    )
+                }
+            }
+            Spacer(Modifier.height(8.dp))
+        }
+
+        // Keep the process trace selectable: workers can emit details that need to be
+        // copied into an issue or a reply. SelectionContainer provides the native copy
+        // action on touch devices and Cmd/Ctrl+C support on desktop.
+        SelectionContainer {
+            Column(
+                // A trace of a few hundred debug lines would otherwise push the rest of the
+                // page out of reach. Capped and given its own scroll, the log stays
+                // inspectable without becoming the whole page; heightIn means a short log
+                // still shrinks.
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .heightIn(max = 260.dp)
+                    .verticalScroll(rememberScrollState()),
+                verticalArrangement = Arrangement.spacedBy(4.dp),
+            ) {
+                shown.forEach { LogLine(it) }
+            }
+        }
+    }
+}
+
+/** Log levels, most severe first — the order the filter offers them in. */
+private val LOG_LEVEL_ORDER = listOf("error", "warn", "info", "debug")
+
+/**
+ * The levels present in a trace with how many lines each has, severe first; anything the server
+ * starts emitting that this build does not know about follows, alphabetically, rather than being
+ * silently unfilterable.
+ */
+internal fun logLevelCounts(logs: List<LogEntryDto>): List<Pair<String, Int>> {
+    val counts = logs.groupingBy { it.level }.eachCount()
+    val known = LOG_LEVEL_ORDER.filter { counts.containsKey(it) }
+    val rest = counts.keys.filterNot { it in LOG_LEVEL_ORDER }.sorted()
+    return (known + rest).map { level -> level to (counts[level] ?: 0) }
+}
+
+/** The level as a person reads it; an unknown level keeps whatever the server called it. */
+internal fun logLevelLabel(level: String): String = when (level) {
+    "error" -> "ошибки"
+    "warn" -> "предупреждения"
+    "info" -> "инфо"
+    "debug" -> "отладка"
+    else -> level
+}
+
+/** The colour a level wears — both as the line's dot and as its chip. */
+private fun logLevelColor(level: String): Color = when (level) {
+    "error" -> AppTheme.Danger
+    "warn" -> AppTheme.Warning
+    "debug" -> AppTheme.Disabled
+    else -> AppTheme.Muted
+}
+
+/** One level of the filter, worn like the policy chips: outlined when off, filled when it is on. */
+@Composable
+private fun LogLevelChip(
+    label: String,
+    count: Int,
+    color: Color,
+    selected: Boolean,
+    onClick: () -> Unit,
+) {
+    Row(
+        modifier = Modifier
+            .clip(RoundedCornerShape(999.dp))
+            .clickable(role = Role.Button, onClick = onClick)
+            .background(if (selected) AppTheme.Primary else AppTheme.Surface, RoundedCornerShape(999.dp))
+            .border(1.dp, AppTheme.Border, RoundedCornerShape(999.dp))
+            .padding(horizontal = 10.dp, vertical = 4.dp),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(5.dp),
+    ) {
+        LevelDot(if (selected) AppTheme.PrimaryForeground else color)
         Text(
-            text = "[${log.level}]",
-            style = AppTheme.Label,
-            color = color,
-            modifier = Modifier.padding(end = 8.dp),
-        )
-        Text(
-            text = if (log.stageRole != null) "${log.stageRole}: ${log.message}" else log.message,
-            style = AppTheme.Label,
-            color = color,
+            text = "$label · $count",
+            style = AppTheme.Footnote,
+            color = if (selected) AppTheme.PrimaryForeground else AppTheme.Muted,
         )
     }
 }
+
+/** The level of a line, as a disc — the word it replaces was a third of the width of a phone. */
+@Composable
+private fun LevelDot(color: Color) {
+    Box(
+        modifier = Modifier
+            .size(7.dp)
+            .clip(CircleShape)
+            .background(color, CircleShape),
+    )
+}
+
+/**
+ * One line of the run's process trace — every level, so the "thinking" behind a run is visible.
+ *
+ * The line is the message and nothing else: the `[debug]` prefix it used to carry cost a third of
+ * the width on a phone and told the reader what the coloured disc now does. When it happened and
+ * which stage produced it open under the line on a tap — that is per-line detail nobody needs on
+ * every line at once, and printing it inline is what made the trace unreadable.
+ */
+@Composable
+private fun LogLine(log: LogEntryDto) {
+    var detailed by remember(log) { mutableStateOf(false) }
+    val color = when (log.level) {
+        "error" -> AppTheme.Danger
+        "warn", "debug" -> AppTheme.Muted
+        else -> AppTheme.Foreground
+    }
+    Column(
+        modifier = Modifier
+            .fillMaxWidth()
+            .clip(RoundedCornerShape(6.dp))
+            .clickable(role = Role.Button, onClick = { detailed = !detailed })
+            .background(if (detailed) AppTheme.Background else Color.Transparent, RoundedCornerShape(6.dp))
+            .padding(horizontal = 4.dp, vertical = 2.dp),
+    ) {
+        Row(verticalAlignment = Alignment.Top) {
+            // The disc sits on the first line of a message that wraps, not in the middle of it.
+            Box(modifier = Modifier.padding(top = 6.dp, end = 8.dp)) { LevelDot(logLevelColor(log.level)) }
+            Text(text = log.message, style = AppTheme.Label, color = color)
+        }
+        if (detailed) {
+            Text(
+                text = logLineDetail(log),
+                style = AppTheme.Footnote,
+                color = AppTheme.Muted,
+                modifier = Modifier.padding(start = 15.dp, top = 2.dp),
+            )
+        }
+    }
+}
+
+/**
+ * What a tapped line says about itself: when it was written, at what level, and — on a pipeline of
+ * more than one stage — which stage wrote it. A line whose timestamp the server did not send (an
+ * older build, a run cached before the field existed) still names its level rather than opening on
+ * an empty hint.
+ */
+internal fun logLineDetail(log: LogEntryDto): String = listOfNotNull(
+    formatLogTimestamp(log.createdAt),
+    logLevelLabel(log.level),
+    log.stageRole?.takeIf { it.isNotBlank() },
+).joinToString(" · ")
 
 /** The word and colour a run's status wears, shared by the badge and the detail page's fact grid. */
 internal fun runStatusPresentation(status: String): Pair<String, Color> = when (status) {

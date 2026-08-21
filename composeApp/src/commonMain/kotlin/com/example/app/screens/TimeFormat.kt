@@ -94,6 +94,26 @@ internal fun formatTimestamp(iso: String?): String? {
 }
 
 /**
+ * `05.08.2026 17:32:10` — the same instant as [formatTimestamp], down to the second.
+ *
+ * Only the run log needs this precision, and it needs it badly: a stage emits dozens of tool calls
+ * inside one minute, so a minute-precision stamp says nothing about their order or their spacing.
+ * The seconds are read straight from the ISO string — the shift into the viewer's timezone is a
+ * whole number of minutes, so it cannot touch them. A timestamp without readable seconds keeps the
+ * minute-precision text rather than losing the line's time altogether.
+ */
+internal fun formatLogTimestamp(iso: String?): String? {
+    val minutes = formatTimestamp(iso) ?: return null
+    val seconds = iso
+        ?.substringAfter('T', missingDelimiterValue = "")
+        ?.takeIf { it.length >= 8 && it[5] == ':' }
+        ?.substring(6, 8)
+        ?.toIntOrNull()
+        ?: return minutes
+    return "$minutes:${two(seconds)}"
+}
+
+/**
  * `1 ч 12 мин` between two UTC instants, `5 мин` under an hour, `<1 мин` when they land in the
  * same minute — the chip beside a finished run. Minute precision is all [epochMinutes] carries,
  * and all a pipeline's timescale deserves. Null when either end is missing or unparseable.

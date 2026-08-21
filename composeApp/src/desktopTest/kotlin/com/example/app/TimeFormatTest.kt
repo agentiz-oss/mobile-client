@@ -3,6 +3,7 @@ package com.example.app
 import com.example.app.platform.deviceUtcOffsetMinutes
 import com.example.app.screens.ViewerTime
 import com.example.app.screens.formatFullSessionWindows
+import com.example.app.screens.formatLogTimestamp
 import com.example.app.screens.formatRemaining
 import com.example.app.screens.formatTimestamp
 import kotlin.test.AfterTest
@@ -45,6 +46,19 @@ class TimeFormatTest {
         ViewerTime.utcOffsetMinutes = 180 // Москва
         ViewerTime.deviceOffsetMinutes = { 420 } // …на телефоне, увезённом в Бангкок
         assertEquals("05.08.2026 17:32", formatTimestamp("2026-08-05T14:32:10Z"))
+    }
+
+    @Test
+    fun `a log line's stamp carries its seconds`() {
+        ViewerTime.utcOffsetMinutes = 180 // Москва
+        assertEquals("05.08.2026 17:32:10", formatLogTimestamp("2026-08-05T14:32:10.123Z"))
+    }
+
+    @Test
+    fun `a log stamp without readable seconds keeps the minute`() {
+        ViewerTime.utcOffsetMinutes = 0
+        assertEquals("05.08.2026 14:32", formatLogTimestamp("2026-08-05T14:32Z"))
+        assertNull(formatLogTimestamp(null))
     }
 
     @Test

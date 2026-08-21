@@ -9,8 +9,12 @@ import androidx.compose.ui.test.v2.runComposeUiTest
 import com.example.app.data.LogEntryDto
 import com.example.app.data.RunDto
 import com.example.app.data.StageDto
+import com.example.app.platform.deviceUtcOffsetMinutes
 import com.example.app.screens.RunResult
+import com.example.app.screens.ViewerTime
 import com.example.app.screens.logCountLabel
+import com.example.app.screens.logLevelCounts
+import com.example.app.screens.logLineDetail
 import com.example.app.screens.summaryRepeatsStages
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.buildJsonObject
@@ -149,6 +153,102 @@ class RunResultLayoutTest {
         // The tail only: folded means folded, and the line is there so the page shows a sign of life.
         onNodeWithText("tool: read file").assertExists()
         onAllNodesWithText("Worker job queued").assertCountEquals(0)
+    }
+
+    @Test
+    fun `the filter offers the levels the trace has, most severe first`() {
+        val logs = listOf(
+            LogEntryDto(level = "debug", message = "tool: read"),
+            LogEntryDto(level = "info", message = "Worker job queued"),
+            LogEntryDto(level = "debug", message = "tool: write"),
+            LogEntryDto(level = "error", message = "Push failed"),
+            LogEntryDto(level = "trace", message = "какой-то новый уровень"),
+        )
+        assertEquals(
+            listOf("error" to 1, "info" to 1, "debug" to 2, "trace" to 1),
+            logLevelCounts(logs),
+        )
+        assertEquals(emptyList(), logLevelCounts(emptyList()))
+    }
+
+    @Test
+    fun `a tapped line says when it happened, at what level and from which stage`() {
+        ViewerTime.utcOffsetMinutes = 180 // Москва
+        try {
+            assertEquals(
+                "05.08.2026 17:32:10 · отладка · dev",
+                logLineDetail(
+                    LogEntryDto(
+                        level = "debug",
+                        message = "tool: read",
+                        stageRole = "dev",
+                        createdAt = "2026-08-05T14:32:10.123Z",
+                    ),
+                ),
+            )
+            // No timestamp from the server (an older build, an older cached run) still names a level.
+            assertEquals("инфо", logLineDetail(LogEntryDto(level = "info", message = "queued")))
+        } finally {
+            ViewerTime.utcOffsetMinutes = null
+            ViewerTime.deviceOffsetMinutes = ::deviceUtcOffsetMinutes
+        }
+    }
+
+    @OptIn(ExperimentalTestApi::class)
+    @Test
+    fun `the log filters down to one level and back`() = runComposeUiTest {
+        setContent {
+            RunResult(
+                RunDto(
+                    id = "run-1",
+                    status = "succeeded",
+                    logs = listOf(
+                        LogEntryDto(level = "info", message = "Worker job queued"),
+                        LogEntryDto(level = "debug", message = "tool: read file"),
+                    ),
+                ),
+            )
+        }
+
+        onNodeWithText("Лог выполнения").performClick()
+        onNodeWithText("отладка", substring = true).performClick()
+        onNodeWithText("tool: read file").assertExists()
+        onAllNodesWithText("Worker job queued").assertCountEquals(0)
+
+        // The active level is the way back to «все» — tapping it again unfilters.
+        onNodeWithText("отладка", substring = true).performClick()
+        onNodeWithText("Worker job queued").assertExists()
+    }
+
+    @OptIn(ExperimentalTestApi::class)
+    @Test
+    fun `a log line opens its time on a tap and not before`() = runComposeUiTest {
+        ViewerTime.utcOffsetMinutes = 0
+        try {
+            setContent {
+                RunResult(
+                    RunDto(
+                        id = "run-1",
+                        status = "succeeded",
+                        logs = listOf(
+                            LogEntryDto(
+                                level = "info",
+                                message = "Worker job queued",
+                                createdAt = "2026-08-05T14:32:10.123Z",
+                            ),
+                        ),
+                    ),
+                )
+            }
+
+            onNodeWithText("Лог выполнения").performClick()
+            onAllNodesWithText("05.08.2026 14:32:10", substring = true).assertCountEquals(0)
+            onNodeWithText("Worker job queued").performClick()
+            onNodeWithText("05.08.2026 14:32:10", substring = true).assertExists()
+        } finally {
+            ViewerTime.utcOffsetMinutes = null
+            ViewerTime.deviceOffsetMinutes = ::deviceUtcOffsetMinutes
+        }
     }
 
     @OptIn(ExperimentalTestApi::class)
