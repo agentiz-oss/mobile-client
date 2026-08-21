@@ -23,6 +23,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateListOf
 import androidx.compose.runtime.mutableStateMapOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -107,6 +108,9 @@ fun TaskDetailScreen(
     val attachmentBytes = remember(taskId) { mutableStateMapOf<String, ByteArray>() }
     var uploadLabel by remember { mutableStateOf<String?>(null) }
     var viewing by remember { mutableStateOf<AttachmentDto?>(null) }
+    // Files chosen for the comment being written, not yet sent: they travel with it on "Отправить",
+    // so abandoning the comment abandons them too.
+    val commentFiles = remember(taskId) { mutableStateListOf<PickedFile>() }
 
     suspend fun load() {
         try {
@@ -174,30 +178,10 @@ fun TaskDetailScreen(
         }
     }
 
-    /**
-     * Uploads what the picker returned, one file at a time so a single oversized photo fails on
-     * its own and the rest still land.
-     */
-    fun uploadPicked(files: List<PickedFile>) {
-        if (files.isEmpty() || busy) return
-        busy = true
-        scope.launch {
-            try {
-                files.forEachIndexed { index, file ->
-                    uploadLabel = "Загрузка ${index + 1} из ${files.size}: ${file.fileName}"
-                    api.uploadAttachment(session.token, taskId, file.fileName, file.mimeType, file.bytes)
-                }
-                error = null
-                load()
-            } catch (e: ApiException) {
-                error = e.message
-            } catch (e: Throwable) {
-                error = "Ошибка сети: ${e.message ?: "неизвестная ошибка"}"
-            } finally {
-                uploadLabel = null
-                busy = false
-            }
-        }
+    /** The picker's result goes into the draft, not to the server — see [commentFiles]. */
+    fun stagePicked(files: List<PickedFile>) {
+        if (busy) return
+        commentFiles += files
     }
 
     fun deleteAttachment(attachment: AttachmentDto) {
@@ -219,19 +203,38 @@ fun TaskDetailScreen(
         }
     }
 
+    /**
+     * Sends what the person wrote and what they attached, in that order on the wire: the files
+     * first, so the thread reads "прикреплён файл X" and then the comment that talks about it.
+     *
+     * Either half may be empty. Files with no text is a complete message on its own — the server
+     * writes its own line into the thread for each one — and text with no files is the ordinary
+     * case, so the button is enabled whenever there is anything at all to send.
+     */
     fun submitComment() {
-        if (busy || comment.isBlank()) return
+        val text = comment.trim()
+        val files = commentFiles.toList()
+        if (busy || (text.isBlank() && files.isEmpty())) return
         busy = true
         scope.launch {
             try {
-                api.addComment(session.token, taskId, comment.trim())
-                comment = ""
+                files.forEachIndexed { index, file ->
+                    uploadLabel = "Загрузка ${index + 1} из ${files.size}: ${file.fileName}"
+                    api.uploadAttachment(session.token, taskId, file.fileName, file.mimeType, file.bytes)
+                }
+                commentFiles.clear()
+                uploadLabel = null
+                if (text.isNotBlank()) {
+                    api.addComment(session.token, taskId, text)
+                    comment = ""
+                }
                 load()
             } catch (e: ApiException) {
                 error = e.message
             } catch (e: Throwable) {
                 error = "Ошибка сети: ${e.message ?: "неизвестная ошибка"}"
             } finally {
+                uploadLabel = null
                 busy = false
             }
         }
@@ -282,7 +285,7 @@ fun TaskDetailScreen(
 
     // Remembered at composable level, not inside the layout: on Android the launcher registers an
     // activity-result contract, which must happen in composition, not on a button press.
-    val filePicker = rememberFilePicker(onPicked = ::uploadPicked)
+    val filePicker = rememberFilePicker(onPicked = ::stagePicked)
 
     val current = detail
     // The viewer is a full-screen layer over the scaffold, so it has to wrap it rather than sit
@@ -314,7 +317,12 @@ fun TaskDetailScreen(
                             .verticalScroll(rememberScrollState())
                             .padding(24.dp),
                     ) {
-                        TaskSummary(current.task)
+                        TaskSummary(
+                        task = current.task,
+                        attachments = current.attachments,
+                        onOpenAttachment = { viewing = it },
+                        loadAttachmentBytes = ::attachmentBytesOf,
+                    )
 
                         if (error != null) {
                             Spacer(Modifier.height(12.dp))
@@ -331,20 +339,6 @@ fun TaskDetailScreen(
                                 onAnswer = { action, content -> answerInteraction(interaction, action, content) },
                             )
                         }
-
-                        // Above the run controls: files are an *input* to the run, so the order on
-                        // screen is the order of the decision — attach what the agent needs, then start.
-                        Spacer(Modifier.height(20.dp))
-                        AttachmentsSection(
-                            attachments = current.attachments,
-                            busy = busy,
-                            uploadLabel = uploadLabel,
-                            onPickPhotos = { filePicker.pickImages() },
-                            onPickFiles = { filePicker.pickFiles() },
-                            onOpen = { viewing = it },
-                            onDelete = ::deleteAttachment,
-                            loadBytes = ::attachmentBytesOf,
-                        )
 
                         Spacer(Modifier.height(16.dp))
                         AppButton(
@@ -419,10 +413,26 @@ fun TaskDetailScreen(
                             minLines = 3,
                         )
                         Spacer(Modifier.height(12.dp))
+                        // Attaching lives with writing: this is the moment a person has both the
+                        // file and something to say about it.
+                        AttachmentStaging(
+                            staged = commentFiles,
+                            busy = busy,
+                            uploadLabel = uploadLabel,
+                            onPickPhotos = { filePicker.pickImages() },
+                            onPickFiles = { filePicker.pickFiles() },
+                            onRemove = { index -> commentFiles.removeAt(index) },
+                        )
+                        Spacer(Modifier.height(12.dp))
                         AppButton(
-                            text = "Отправить",
+                            text = when {
+                                busy -> "…"
+                                comment.isBlank() && commentFiles.isNotEmpty() ->
+                                    if (commentFiles.size == 1) "Прикрепить файл" else "Прикрепить файлы"
+                                else -> "Отправить"
+                            },
                             onClick = ::submitComment,
-                            enabled = !busy && comment.isNotBlank(),
+                            enabled = !busy && (comment.isNotBlank() || commentFiles.isNotEmpty()),
                             modifier = Modifier.fillMaxWidth(),
                         )
                         Spacer(Modifier.height(24.dp))
@@ -437,6 +447,8 @@ fun TaskDetailScreen(
             AttachmentViewer(
                 attachment = attachment,
                 bytes = attachmentBytes[attachment.id],
+                busy = busy,
+                onDelete = { deleteAttachment(attachment) },
                 onClose = { viewing = null },
             )
             LaunchedEffect(attachment.id) { attachmentBytesOf(attachment) }
@@ -448,7 +460,12 @@ private fun currentRun(detail: TaskDetailDto?, runs: List<RunDto>?): RunDto? =
     runs?.firstOrNull { it.status in ACTIVE_RUN_STATES } ?: detail?.latestRun
 
 @Composable
-private fun TaskSummary(task: TaskDto) {
+private fun TaskSummary(
+    task: TaskDto,
+    attachments: List<AttachmentDto>,
+    onOpenAttachment: (AttachmentDto) -> Unit,
+    loadAttachmentBytes: suspend (AttachmentDto) -> ByteArray?,
+) {
     Column(
         modifier = Modifier
             .fillMaxWidth()
@@ -476,6 +493,16 @@ private fun TaskSummary(task: TaskDto) {
         if (task.tags.isNotEmpty()) {
             Spacer(Modifier.height(12.dp))
             Text(text = task.tags.joinToString(" · "), style = AppTheme.Label, color = AppTheme.Muted)
+        }
+        // Part of what the task *is*, next to the words describing it — a screenshot is usually
+        // half the description, and reading one without the other is reading half the task.
+        if (attachments.isNotEmpty()) {
+            Spacer(Modifier.height(16.dp))
+            AttachmentGallery(
+                attachments = attachments,
+                onOpen = onOpenAttachment,
+                loadBytes = loadAttachmentBytes,
+            )
         }
     }
 }

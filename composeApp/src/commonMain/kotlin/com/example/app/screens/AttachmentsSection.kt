@@ -37,69 +37,42 @@ import androidx.compose.ui.unit.dp
 import com.composeunstyled.Text
 import com.example.app.components.AppButton
 import com.example.app.data.AttachmentDto
+import com.example.app.platform.PickedFile
 import com.example.app.theme.AppTheme
 
-/** Thumbnail edge, and the cap the full-screen viewer scales an image down to fit. */
+/** Thumbnail edge in the read-only gallery. */
 private val THUMB_SIZE = 96.dp
 
 /**
- * The task's files: what is attached, and the two ways to attach more.
+ * The files already on a task, as a strip under its description — a gallery, not a workspace.
  *
- * Images load their own bytes and render as thumbnails, because a screenshot is the attachment a
- * person actually needs to recognise at a glance — a row of file names would make "которая из
- * этих трёх" unanswerable without opening each. Everything else is a labelled card.
- *
- * [loadBytes] is the caller's cache, not a fetch: the task screen re-polls every two seconds while
- * a run is active, and a thumbnail that re-downloaded on every tick would make an open task a
- * steady stream of image traffic.
+ * Attaching happens where a person is *writing* (a new task, a comment), because that is when they
+ * have something to attach and something to say about it. What sits under the description is the
+ * result of those moments, so this component only shows and opens; removing a file lives one level
+ * in, in [AttachmentViewer], where the reader can already see what they are about to delete.
  */
 @Composable
-internal fun AttachmentsSection(
+internal fun AttachmentGallery(
     attachments: List<AttachmentDto>,
-    busy: Boolean,
-    uploadLabel: String?,
-    onPickPhotos: () -> Unit,
-    onPickFiles: () -> Unit,
     onOpen: (AttachmentDto) -> Unit,
-    onDelete: (AttachmentDto) -> Unit,
     loadBytes: suspend (AttachmentDto) -> ByteArray?,
 ) {
-    SectionTitle(if (attachments.isEmpty()) "Файлы" else "Файлы (${attachments.size})")
-    Spacer(Modifier.height(8.dp))
+    if (attachments.isEmpty()) return
+
     Text(
-        text = "Агент получит эти файлы при запуске.",
+        text = if (attachments.size == 1) "1 файл" else "${attachments.size} файла(ов)",
         style = AppTheme.Label,
         color = AppTheme.Muted,
     )
-
-    Spacer(Modifier.height(12.dp))
-    Row(horizontalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.fillMaxWidth()) {
-        AppButton(text = "Фото", onClick = onPickPhotos, enabled = !busy, modifier = Modifier.weight(1f))
-        AppButton(text = "Файл", onClick = onPickFiles, enabled = !busy, modifier = Modifier.weight(1f))
-    }
-
-    if (uploadLabel != null) {
-        Spacer(Modifier.height(8.dp))
-        Text(text = uploadLabel, style = AppTheme.Label, color = AppTheme.Warning)
-    }
-
-    if (attachments.isNotEmpty()) {
-        Spacer(Modifier.height(12.dp))
-        Row(
-            modifier = Modifier
-                .fillMaxWidth()
-                .horizontalScroll(rememberScrollState()),
-            horizontalArrangement = Arrangement.spacedBy(8.dp),
-        ) {
-            attachments.forEach { attachment ->
-                AttachmentCard(
-                    attachment = attachment,
-                    busy = busy,
-                    onOpen = { onOpen(attachment) },
-                    onDelete = { onDelete(attachment) },
-                    loadBytes = loadBytes,
-                )
-            }
+    Spacer(Modifier.height(8.dp))
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .horizontalScroll(rememberScrollState()),
+        horizontalArrangement = Arrangement.spacedBy(8.dp),
+    ) {
+        attachments.forEach { attachment ->
+            AttachmentCard(attachment = attachment, onOpen = { onOpen(attachment) }, loadBytes = loadBytes)
         }
     }
 }
@@ -107,9 +80,7 @@ internal fun AttachmentsSection(
 @Composable
 private fun AttachmentCard(
     attachment: AttachmentDto,
-    busy: Boolean,
     onOpen: () -> Unit,
-    onDelete: () -> Unit,
     loadBytes: suspend (AttachmentDto) -> ByteArray?,
 ) {
     Column(
@@ -117,12 +88,11 @@ private fun AttachmentCard(
             .width(THUMB_SIZE + 24.dp)
             .border(1.dp, AppTheme.Border, RoundedCornerShape(AppTheme.Radius))
             .clip(RoundedCornerShape(AppTheme.Radius))
-            .background(AppTheme.Surface),
+            .background(AppTheme.Background)
+            .clickable { onOpen() },
     ) {
         Box(
-            modifier = Modifier
-                .size(width = THUMB_SIZE + 24.dp, height = THUMB_SIZE)
-                .clickable(enabled = !busy) { onOpen() },
+            modifier = Modifier.size(width = THUMB_SIZE + 24.dp, height = THUMB_SIZE),
             contentAlignment = Alignment.Center,
         ) {
             if (attachment.isImage) {
@@ -139,19 +109,7 @@ private fun AttachmentCard(
                 maxLines = 1,
                 overflow = TextOverflow.Ellipsis,
             )
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.SpaceBetween,
-                verticalAlignment = Alignment.CenterVertically,
-            ) {
-                Text(text = formatBytes(attachment.sizeBytes), style = AppTheme.Label, color = AppTheme.Muted)
-                Text(
-                    text = "Удалить",
-                    style = AppTheme.Label,
-                    color = if (busy) AppTheme.Disabled else AppTheme.Danger,
-                    modifier = Modifier.clickable(enabled = !busy) { onDelete() },
-                )
-            }
+            Text(text = formatBytes(attachment.sizeBytes), style = AppTheme.Label, color = AppTheme.Muted)
         }
     }
 }
@@ -195,13 +153,71 @@ private fun AttachmentThumbnail(
 }
 
 /**
- * Full-screen look at one image. Tapping the backdrop closes it — the same gesture the platform
- * photo viewers use, and the only one available without a gesture library.
+ * Files chosen but not sent yet, with the two ways to choose more.
+ *
+ * Staged rather than uploaded on pick: a photo attached to a comment belongs *with* the comment,
+ * and uploading on pick would leave the file on the task even when the person then changed their
+ * mind and cleared what they were writing.
+ */
+@Composable
+internal fun AttachmentStaging(
+    staged: List<PickedFile>,
+    busy: Boolean,
+    uploadLabel: String?,
+    onPickPhotos: () -> Unit,
+    onPickFiles: () -> Unit,
+    onRemove: (Int) -> Unit,
+) {
+    Row(horizontalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.fillMaxWidth()) {
+        AppButton(text = "Фото", onClick = onPickPhotos, enabled = !busy, modifier = Modifier.weight(1f))
+        AppButton(text = "Файл", onClick = onPickFiles, enabled = !busy, modifier = Modifier.weight(1f))
+    }
+
+    if (uploadLabel != null) {
+        Spacer(Modifier.height(8.dp))
+        Text(text = uploadLabel, style = AppTheme.Label, color = AppTheme.Warning)
+    }
+
+    if (staged.isNotEmpty()) {
+        Spacer(Modifier.height(8.dp))
+        staged.forEachIndexed { index, file ->
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(vertical = 2.dp),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                Text(
+                    text = "${file.fileName} · ${formatBytes(file.bytes.size.toLong())}",
+                    style = AppTheme.Label,
+                    color = AppTheme.Foreground,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                    modifier = Modifier.weight(1f),
+                )
+                Text(
+                    text = "Убрать",
+                    style = AppTheme.Label,
+                    color = if (busy) AppTheme.Disabled else AppTheme.Danger,
+                    modifier = Modifier.clickable(enabled = !busy) { onRemove(index) },
+                )
+            }
+        }
+    }
+}
+
+/**
+ * Full-screen look at one attachment, and the only place a file can be removed from a task: the
+ * reader is looking straight at what they are deleting, which the strip under the description
+ * cannot promise at thumbnail size.
  */
 @Composable
 internal fun AttachmentViewer(
     attachment: AttachmentDto,
     bytes: ByteArray?,
+    busy: Boolean,
+    onDelete: () -> Unit,
     onClose: () -> Unit,
 ) {
     Box(
@@ -242,8 +258,11 @@ internal fun AttachmentViewer(
                 color = AppTheme.Background,
                 textAlign = TextAlign.Center,
             )
-            Spacer(Modifier.height(4.dp))
-            Text(text = "Нажмите, чтобы закрыть", style = AppTheme.Label, color = AppTheme.Disabled)
+            Spacer(Modifier.height(16.dp))
+            Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                AppButton(text = if (busy) "Удаление…" else "Удалить", onClick = onDelete, enabled = !busy)
+                AppButton(text = "Закрыть", onClick = onClose, enabled = !busy)
+            }
         }
     }
 }

@@ -20,6 +20,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateListOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
@@ -44,6 +45,8 @@ import com.example.app.data.LocalStore
 import com.example.app.data.ProjectDto
 import com.example.app.data.Session
 import com.example.app.data.TaskDto
+import com.example.app.platform.PickedFile
+import com.example.app.platform.rememberFilePicker
 import com.example.app.theme.AppTheme
 import kotlinx.coroutines.launch
 
@@ -83,6 +86,11 @@ fun TasksScreen(
     var title by remember { mutableStateOf("") }
     var description by remember { mutableStateOf("") }
     var creating by remember { mutableStateOf(false) }
+    // Files picked for the task being written. They cannot be uploaded before it exists — an
+    // attachment belongs to a task id — so they wait here and go up right after it is created.
+    val newTaskFiles = remember { mutableStateListOf<PickedFile>() }
+    var uploadLabel by remember { mutableStateOf<String?>(null) }
+    val filePicker = rememberFilePicker(onPicked = { picked -> if (!creating) newTaskFiles += picked })
 
     LaunchedEffect(reloadKey) {
         loading = tasks == null
@@ -107,7 +115,14 @@ fun TasksScreen(
         error = null
         scope.launch {
             try {
-                api.createTask(session.token, project.id, title.trim(), description.trim().ifBlank { null })
+                val created = api.createTask(session.token, project.id, title.trim(), description.trim().ifBlank { null })
+                // After creation, not before: the upload endpoint is addressed by task id, and a
+                // task that failed validation must not leave orphaned files behind it.
+                newTaskFiles.toList().forEachIndexed { index, file ->
+                    uploadLabel = "Загрузка ${index + 1} из ${newTaskFiles.size}: ${file.fileName}"
+                    api.uploadAttachment(session.token, created.id, file.fileName, file.mimeType, file.bytes)
+                }
+                newTaskFiles.clear()
                 title = ""
                 description = ""
                 composing = false
@@ -117,6 +132,7 @@ fun TasksScreen(
             } catch (e: Throwable) {
                 error = "Ошибка сети: ${e.message ?: "неизвестная ошибка"}"
             } finally {
+                uploadLabel = null
                 creating = false
             }
         }
@@ -156,11 +172,17 @@ fun TasksScreen(
                             description = description,
                             onDescriptionChange = { description = it },
                             busy = creating,
+                            staged = newTaskFiles,
+                            uploadLabel = uploadLabel,
+                            onPickPhotos = { filePicker.pickImages() },
+                            onPickFiles = { filePicker.pickFiles() },
+                            onRemoveStaged = { index -> newTaskFiles.removeAt(index) },
                             onSubmit = ::submit,
                             onCancel = {
                                 composing = false
                                 title = ""
                                 description = ""
+                                newTaskFiles.clear()
                             },
                         )
                     } else {
@@ -225,6 +247,11 @@ private fun NewTaskForm(
     description: String,
     onDescriptionChange: (String) -> Unit,
     busy: Boolean,
+    staged: List<PickedFile>,
+    uploadLabel: String?,
+    onPickPhotos: () -> Unit,
+    onPickFiles: () -> Unit,
+    onRemoveStaged: (Int) -> Unit,
     onSubmit: () -> Unit,
     onCancel: () -> Unit,
 ) {
@@ -253,6 +280,17 @@ private fun NewTaskForm(
             // A description is prose, not a line: let it wrap and grow rather than scrolling
             // sideways through what the user just typed.
             minLines = 3,
+        )
+        Spacer(Modifier.height(12.dp))
+        // A screenshot is often the clearest half of a task; asking for it here means the run
+        // started from this screen already has it.
+        AttachmentStaging(
+            staged = staged,
+            busy = busy,
+            uploadLabel = uploadLabel,
+            onPickPhotos = onPickPhotos,
+            onPickFiles = onPickFiles,
+            onRemove = onRemoveStaged,
         )
         Spacer(Modifier.height(16.dp))
         Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
