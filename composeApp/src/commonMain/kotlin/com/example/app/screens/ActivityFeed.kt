@@ -32,11 +32,8 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import com.composeunstyled.Text
 import com.example.app.components.AppButton
-import com.example.app.components.AppScaffold
-import com.example.app.components.MenuEntry
 import com.example.app.components.PullToRefresh
 import com.example.app.data.ActivityDto
-import com.example.app.data.ActivitySummaryDto
 import com.example.app.data.AgentizApi
 import com.example.app.data.ApiException
 import com.example.app.data.Session
@@ -45,21 +42,21 @@ import com.example.app.theme.AppTheme
 import kotlinx.coroutines.launch
 
 /**
- * The activity feed: «Требуют действия» on top — computed by the server from live entities, so an
- * answered question leaves the block on the next refresh — and below it the immutable journal of
- * everything that happened, newest first, paged by the server's cursor.
+ * The immutable journal: everything that happened across the user's projects, newest first, paged
+ * by the server's cursor.
  *
- * Opening the screen marks the feed seen: the drawer badge counts rows newer than that mark, and
+ * A list, not a screen — it is the second tab of [InboxScreen], next to the things that still need
+ * a person. The split is the point: what is *waiting* is computed from live entities and shrinks as
+ * it is dealt with, while this only ever grows, and mixing the two is what made "требуют действия"
+ * unreadable on the screen this came from.
+ *
+ * Being on screen marks the feed seen: the drawer badge counts rows newer than that mark, and
  * looking at the list is precisely what "seen" means here.
  */
 @Composable
-fun ActivitiesScreen(
+fun ActivityFeed(
     session: Session,
-    menu: List<MenuEntry>,
-    onBack: () -> Unit,
-    onOpenSettings: () -> Unit,
-    onOpenProfile: () -> Unit,
-    /** A question in focus: the interactions screen, scrolled to it. */
+    /** A question in focus — the inbox opens its card rather than pushing another screen. */
     onOpenInteraction: (interactionId: String) -> Unit,
     /** Anything that lives on a run's page: proposals, held diffs, finished runs. */
     onOpenRun: (projectId: String, projectName: String?, taskId: String, runId: String) -> Unit,
@@ -67,7 +64,6 @@ fun ActivitiesScreen(
     val api = remember(session.serverUrl) { AgentizApi(session.serverUrl) }
     DisposableEffect(api) { onDispose { api.close() } }
 
-    var summary by remember { mutableStateOf<ActivitySummaryDto?>(null) }
     var items by remember { mutableStateOf<List<ActivityDto>>(emptyList()) }
     var nextBefore by remember { mutableStateOf<String?>(null) }
     var loaded by remember { mutableStateOf(false) }
@@ -79,9 +75,7 @@ fun ActivitiesScreen(
 
     suspend fun load() {
         try {
-            val freshSummary = api.activitySummary(session.token)
             val page = api.activities(session.token)
-            summary = freshSummary
             items = page.items
             nextBefore = page.nextBefore
             loaded = true
@@ -120,15 +114,6 @@ fun ActivitiesScreen(
 
     LaunchedEffect(reloadKey) { load() }
 
-    val currentSummary = summary
-    AppScaffold(
-        title = "Активности",
-        subtitle = currentSummary?.actionableCount?.takeIf { it > 0 }?.let { "$it требуют действия" },
-        menu = menu,
-        onOpenSettings = onOpenSettings,
-        onOpenProfile = onOpenProfile,
-        onBack = onBack,
-    ) {
         when {
             !loaded && error != null -> RetryState(message = error!!, onRetry = { reloadKey++ })
             !loaded -> CenterMessage("Загрузка активностей…")
@@ -148,44 +133,6 @@ fun ActivitiesScreen(
                     error?.let { message ->
                         item(key = "error") { Text(text = message, style = AppTheme.Label, color = AppTheme.Danger) }
                     }
-
-                    val actionable = currentSummary
-                    if (actionable != null && actionable.actionableCount > 0) {
-                        item(key = "actionable-title") { SectionTitle("Требуют действия (${actionable.actionableCount})") }
-                        items(actionable.interactions, key = { "int-${it.id}" }) { row ->
-                            ActionableCard(
-                                badge = "вопрос",
-                                title = row.taskTitle ?: "Вопрос агента",
-                                body = row.message,
-                                timestamp = row.createdAt,
-                                onClick = { onOpenInteraction(row.id) },
-                            )
-                        }
-                        items(actionable.proposals, key = { "prop-${it.id}" }) { row ->
-                            ActionableCard(
-                                badge = when (row.status) {
-                                    "push_failed" -> "push не прошёл"
-                                    "reset_failed" -> "сброс не прошёл"
-                                    else -> "ревью"
-                                },
-                                title = row.taskTitle ?: "Изменения ждут решения",
-                                body = row.lastError ?: row.commitMessage ?: "Ревизия ${row.revision}",
-                                timestamp = row.updatedAt,
-                                onClick = { onOpenRun(row.projectId, null, row.taskId, row.runId) },
-                            )
-                        }
-                        items(actionable.heldRuns, key = { "held-${it.runId}" }) { row ->
-                            ActionableCard(
-                                badge = "ждёт одобрения",
-                                title = row.taskTitle ?: "Изменения удержаны",
-                                body = if (row.operations == 1) "1 изменение ждёт одобрения" else "${row.operations} изменений ждут одобрения",
-                                timestamp = row.finishedAt,
-                                onClick = { onOpenRun(row.projectId, null, row.taskId, row.runId) },
-                            )
-                        }
-                    }
-
-                    item(key = "feed-title") { SectionTitle("Лента") }
 
                     if (items.isEmpty()) {
                         item(key = "feed-empty") {
@@ -220,63 +167,6 @@ fun ActivitiesScreen(
                     }
                 }
             }
-        }
-    }
-}
-
-/** One "надо сделать" row: what kind of attention, which task, and the one line that explains it. */
-@Composable
-private fun ActionableCard(
-    badge: String,
-    title: String,
-    body: String,
-    timestamp: String?,
-    onClick: () -> Unit,
-) {
-    Column(
-        modifier = Modifier
-            .fillMaxWidth()
-            .clip(RoundedCornerShape(AppTheme.Radius))
-            .clickable(role = Role.Button, onClick = onClick)
-            .border(1.dp, AppTheme.Border, RoundedCornerShape(AppTheme.Radius))
-            .background(AppTheme.Surface, RoundedCornerShape(AppTheme.Radius))
-            .padding(20.dp),
-    ) {
-        Row(
-            modifier = Modifier.fillMaxWidth(),
-            horizontalArrangement = Arrangement.SpaceBetween,
-            verticalAlignment = Alignment.CenterVertically,
-        ) {
-            Text(
-                text = title,
-                style = AppTheme.Subtitle,
-                color = AppTheme.Foreground,
-                maxLines = 2,
-                overflow = TextOverflow.Ellipsis,
-                modifier = Modifier.weight(1f).padding(end = 12.dp),
-            )
-            Text(
-                text = badge,
-                style = AppTheme.Label,
-                color = AppTheme.PrimaryForeground,
-                modifier = Modifier
-                    .background(AppTheme.Primary, RoundedCornerShape(999.dp))
-                    .padding(horizontal = 10.dp, vertical = 3.dp),
-            )
-        }
-        Spacer(Modifier.height(6.dp))
-        // Clipped to three lines, so the markup is taken off rather than rendered.
-        Text(
-            text = markdownToPlainText(body),
-            style = AppTheme.Body,
-            color = AppTheme.Muted,
-            maxLines = 3,
-            overflow = TextOverflow.Ellipsis,
-        )
-        timestamp?.let {
-            Spacer(Modifier.height(6.dp))
-            Text(text = formatTimestamp(it) ?: it, style = AppTheme.Label, color = AppTheme.Muted)
-        }
     }
 }
 

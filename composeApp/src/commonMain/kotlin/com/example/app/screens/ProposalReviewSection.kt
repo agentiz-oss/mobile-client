@@ -38,6 +38,12 @@ import com.example.app.theme.AppTheme
 fun ProposalReviewSection(
     proposal: ProposalDto,
     busy: Boolean,
+    /**
+     * Which half of the block to open with. The inbox card already asked "одобрить или отклонить"
+     * with its own two buttons, and repeating that question inside the block it just opened would
+     * cost a second tap for nothing; the run screen passes nothing and gets both buttons as before.
+     */
+    initialMode: String? = null,
     onApprove: (revision: Int, targetBranch: String?, commitMessage: String?) -> Unit,
     onReject: (revision: Int) -> Unit,
 ) {
@@ -45,7 +51,10 @@ fun ProposalReviewSection(
     val canReject = proposal.status in listOf("waiting_review", "push_failed", "reset_failed")
     if (!canApprove && !canReject) return
 
-    var mode by remember(proposal.id, proposal.revision, proposal.status) { mutableStateOf<String?>(null) }
+    var mode by remember(proposal.id, proposal.revision, proposal.status, initialMode) {
+        // A mode the proposal's status does not offer is ignored rather than shown empty.
+        mutableStateOf(initialMode?.takeIf { (it == "approve" && canApprove) || (it == "reject" && canReject) })
+    }
     var commitMessage by remember(proposal.id, proposal.revision) { mutableStateOf(proposal.commitMessage ?: "") }
     var targetBranch by remember(proposal.id, proposal.revision) { mutableStateOf(proposal.targetBranch ?: "") }
 

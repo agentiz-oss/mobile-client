@@ -60,6 +60,15 @@ object AppTheme {
     val Disabled: Color = Color(0xFFA1A1AA)
 
     /**
+     * The two tints GitHub puts behind a row-level action — «Review now» on a notification, a
+     * destructive verb next to it. Surfaces only for those: a filled [Accent] or [Danger] button
+     * inside a list row shouts louder than the row's own title, which is what the reader is meant
+     * to read first.
+     */
+    val AccentSubtle: Color = Color(0xFFDDF4FF)
+    val DangerSubtle: Color = Color(0xFFFFEBE9)
+
+    /**
      * Fill for a run's card in the history list — a pastel blue so faint it reads as a tint rather
      * than a colour, just enough to set "запуск" cards apart from the neutral surfaces around them.
      */

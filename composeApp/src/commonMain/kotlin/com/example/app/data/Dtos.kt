@@ -182,6 +182,26 @@ data class RunDto(
     val diff: DiffDto? = null,
     /** What this run cost in tokens. Defaulted for the same reason as [diff]. */
     val usage: RunUsageDto? = null,
+    /**
+     * What the run was asked to do — the comment it was triggered from, or the task's description.
+     * The run screen leads with it: a task named "выполни" tells a reader nothing, and the agent's
+     * answer is unreadable without the question. Null on an older server and on a run whose task
+     * carries neither.
+     */
+    val instruction: RunInstructionDto? = null,
+)
+
+/**
+ * The instruction behind a run. [source] is `comment` when it came from the comment the run was
+ * started from (the one the worker puts last in the prompt as the current instruction) and
+ * `description` when the task's own text is all there was.
+ */
+@Serializable
+data class RunInstructionDto(
+    val source: String = "description",
+    val body: String = "",
+    val authorName: String? = null,
+    val createdAt: String? = null,
 )
 
 /**
@@ -259,6 +279,12 @@ data class TaskDetailDto(
     val pendingInteractions: List<InteractionDto> = emptyList(),
     /** Files and photos attached to the task; the agent receives these when a run starts. */
     val attachments: List<AttachmentDto> = emptyList(),
+    /**
+     * What this task is waiting on from a person, in the same shape the inbox renders — a question,
+     * a review, a failed push, a held diff. The task screen states it above everything else, so
+     * "что от меня хотят" is not something to deduce from a run's page.
+     */
+    val actionRequired: List<InboxItemDto> = emptyList(),
 )
 
 /**
@@ -623,11 +649,55 @@ data class SummaryHeldRunDto(
  */
 @Serializable
 data class ActivitySummaryDto(
+    /**
+     * Everything waiting on a person, in one shape and one order — the list the inbox renders.
+     * Empty against a server that predates it, which is why the three arrays below are still read:
+     * they are the same facts in the shape older builds parse.
+     */
+    val items: List<InboxItemDto> = emptyList(),
     val interactions: List<SummaryInteractionDto> = emptyList(),
     val proposals: List<SummaryProposalDto> = emptyList(),
     val heldRuns: List<SummaryHeldRunDto> = emptyList(),
     val actionableCount: Int = 0,
     val unseen: Int = 0,
+)
+
+/**
+ * One thing that needs a person. The server decides what it is called ([badge]), what it says
+ * ([headline] — what is being asked, [facts] — what to decide on) and what may be done to it
+ * ([actions]); the client only draws it and calls the endpoint the action names. Kinds are open on
+ * purpose: an unknown one still renders as a card that opens its run.
+ */
+@Serializable
+data class InboxItemDto(
+    val id: String,
+    val kind: String = "",
+    /** The catalogue type behind the kind — `interaction.created`, `proposal.waiting_review`, … */
+    val activityType: String = "",
+    val badge: String = "",
+    val headline: String = "",
+    val facts: String? = null,
+    val projectId: String = "",
+    val projectName: String? = null,
+    val taskId: String? = null,
+    val taskTitle: String? = null,
+    val runId: String? = null,
+    val interactionId: String? = null,
+    val proposalId: String? = null,
+    val revision: Int? = null,
+    val url: String? = null,
+    val waitingSince: String? = null,
+    val expiresAt: String? = null,
+    val priority: Int = 0,
+    val actions: List<InboxActionDto> = emptyList(),
+)
+
+/** [key] is what the client dispatches on; [label] is the caption, spelled once on the server. */
+@Serializable
+data class InboxActionDto(
+    val key: String,
+    val label: String,
+    val style: String = "default",
 )
 
 @Serializable

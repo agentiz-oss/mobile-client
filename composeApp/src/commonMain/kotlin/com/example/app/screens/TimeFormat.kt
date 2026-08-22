@@ -163,6 +163,29 @@ internal fun formatRemaining(
     return if (hours > 0) "$hours ч $minutes мин" else "$minutes мин"
 }
 
+/**
+ * `15 мин` / `2 ч` / `3 дн` since a UTC instant — how long something has been waiting for a person.
+ *
+ * Coarse on purpose: the number is read as pressure, not as a measurement, and a row that says
+ * "2 ч 14 мин" invites arithmetic instead of a decision. Null for anything under a minute and for
+ * a timestamp in the future, so a freshly created row simply carries no age.
+ */
+@OptIn(ExperimentalTime::class)
+internal fun formatWaiting(
+    sinceIso: String?,
+    nowEpochMillis: Long = Clock.System.now().toEpochMilliseconds(),
+): String? {
+    if (sinceIso.isNullOrBlank()) return null
+    val since = epochMinutes(sinceIso) ?: return null
+    val minutes = nowEpochMillis.floorDiv(60_000) - since
+    return when {
+        minutes < 1 -> null
+        minutes < 60 -> "$minutes мин"
+        minutes < 60 * 24 -> "${minutes / 60} ч"
+        else -> "${minutes / (60 * 24)} дн"
+    }
+}
+
 /** Length of a harness session window, mirroring `SESSION_WINDOW_MS` in `lib/harnessAlign.ts`. */
 private const val SESSION_WINDOW_MINUTES = 300L
 

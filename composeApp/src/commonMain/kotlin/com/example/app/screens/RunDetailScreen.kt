@@ -198,6 +198,13 @@ fun RunDetailScreen(
                     )
                 }
                 Spacer(Modifier.height(16.dp))
+                // What the agent was actually asked. The task's *name* is above, and for a task
+                // started from a one-word comment ("выполни") it says nothing at all — the answer
+                // below is unreadable without the question it answers.
+                current.instruction?.let { instruction ->
+                    InstructionCard(instruction)
+                    Spacer(Modifier.height(16.dp))
+                }
                 proposal?.let { pending ->
                     ProposalReviewSection(
                         proposal = pending,

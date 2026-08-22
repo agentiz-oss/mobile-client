@@ -44,6 +44,7 @@ import com.example.app.data.DiffDto
 import com.example.app.data.InteractionDto
 import com.example.app.data.LogEntryDto
 import com.example.app.data.RunDto
+import com.example.app.data.RunInstructionDto
 import com.example.app.data.StageDto
 import com.example.app.diff.DiffPalette
 import com.example.app.diff.DiffViewer
@@ -109,6 +110,59 @@ internal fun TaskLinkRow(taskTitle: String?, projectName: String?, onClick: () -
         ForwardIcon(AppTheme.Muted, size = 14.dp)
     }
 }
+
+/**
+ * What the run was asked to do, above what it answered.
+ *
+ * A run's page used to open with the task's *title* and go straight to the agent's output, which
+ * for a task called "выполни" left no way to tell what the run was about at all. The server
+ * resolves the instruction to the comment the run was triggered from, or to the task's description
+ * when there was no such comment ([RunInstructionDto.source] says which), so this block is the
+ * question the whole page is an answer to.
+ *
+ * Folded past a few lines: an instruction can be a page of prose, and pushing the result off the
+ * screen to show it in full would trade one unreadable page for another.
+ */
+@Composable
+internal fun InstructionCard(instruction: RunInstructionDto) {
+    var expanded by remember(instruction.body) { mutableStateOf(false) }
+    val long = instruction.body.length > INSTRUCTION_FOLD_CHARS
+
+    SectionTitle("Что просили")
+    Spacer(Modifier.height(8.dp))
+    Column(
+        modifier = Modifier
+            .fillMaxWidth()
+            .border(1.dp, AppTheme.Border, RoundedCornerShape(AppTheme.Radius))
+            .background(AppTheme.Background, RoundedCornerShape(AppTheme.Radius))
+            .padding(16.dp),
+    ) {
+        val origin = listOfNotNull(
+            if (instruction.source == "comment") "из комментария" else "из описания задачи",
+            instruction.authorName?.takeIf { it.isNotBlank() },
+            formatTimestamp(instruction.createdAt),
+        ).joinToString(" · ")
+        Text(text = origin, style = AppTheme.Footnote, color = AppTheme.Muted)
+        Spacer(Modifier.height(8.dp))
+        val shown = if (long && !expanded) instruction.body.take(INSTRUCTION_FOLD_CHARS).trimEnd() + "…" else instruction.body
+        MarkdownText(text = shown, style = AppTheme.Body, color = AppTheme.Foreground)
+        if (long) {
+            Spacer(Modifier.height(8.dp))
+            Text(
+                text = if (expanded) "Свернуть" else "Показать полностью",
+                style = AppTheme.Footnote,
+                color = AppTheme.Accent,
+                modifier = Modifier
+                    .clip(RoundedCornerShape(6.dp))
+                    .clickable(role = Role.Button) { expanded = !expanded }
+                    .padding(vertical = 2.dp),
+            )
+        }
+    }
+}
+
+/** Where an instruction is cut when folded — a few paragraphs, not a screenful. */
+private const val INSTRUCTION_FOLD_CHARS = 400
 
 /**
  * The full record of one pipeline run: its stages, its log trace and the worker's final answer.

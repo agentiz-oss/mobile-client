@@ -540,6 +540,24 @@ internal fun AnsweredInteractionRow(interaction: InteractionDto) {
     }
 }
 
+/**
+ * The question a notification pointed at, after somebody else has already dealt with it.
+ *
+ * Shown instead of nothing: a push that opens an empty inbox looks like the app lost the question,
+ * when in fact the run has moved on — and which way it moved is the one thing worth reporting.
+ */
+@Composable
+internal fun ClosedInteractionNote(interaction: InteractionDto) {
+    Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+        Text(
+            text = "Этот вопрос уже закрыт — ${interactionStatusLabel(interaction)}",
+            style = AppTheme.Label,
+            color = AppTheme.Muted,
+        )
+        AnsweredInteractionRow(interaction)
+    }
+}
+
 /** How a question ended, in the same vocabulary the dashboard uses. */
 internal fun interactionStatusLabel(interaction: InteractionDto): String {
     val who = interaction.answeredByName?.takeIf { it.isNotBlank() }

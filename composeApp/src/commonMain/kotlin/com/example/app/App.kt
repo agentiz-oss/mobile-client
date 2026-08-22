@@ -25,8 +25,8 @@ import com.example.app.data.clearSession
 import com.example.app.data.loadSession
 import com.example.app.data.saveSession
 import com.example.app.data.ActivitySummaryDto
-import com.example.app.screens.ActivitiesScreen
-import com.example.app.screens.InteractionsScreen
+import com.example.app.screens.InboxScreen
+import com.example.app.screens.InboxTab
 import com.example.app.screens.LoginScreen
 import com.example.app.screens.AgentDashboardScreen
 import com.example.app.screens.ProfileScreen
@@ -86,19 +86,20 @@ private sealed interface Destination {
     data class Agent(val from: Destination) : Destination
 
     /**
-     * Every agent question waiting on the user, regardless of which project it came from.
+     * Everything waiting on the user across every project — questions, reviews, failed pushes,
+     * held diffs, opened pull requests — with the activity journal behind its second tab. One
+     * destination for both, because the two used to be separate screens showing overlapping
+     * content and nothing said which door a given kind of waiting was behind.
      *
-     * [focusInteractionId] is set when the screen was opened from a notification: that one question
-     * is pulled to the top and opened, and it is fetched by id if it is no longer in the pending
-     * list — a push tapped ten minutes late must still explain itself.
+     * [focusInteractionId] is set when it was opened from a notification: that question's card is
+     * opened, and it is fetched by id if it is no longer waiting — a push tapped ten minutes late
+     * must still explain itself.
      */
-    data class Interactions(val from: Destination, val focusInteractionId: String? = null) : Destination
-
-    /**
-     * The activity feed: everything that happened across the user's projects, with the actionable
-     * part (questions, reviews, held diffs) pulled to the top.
-     */
-    data class Activities(val from: Destination) : Destination
+    data class Inbox(
+        val from: Destination,
+        val focusInteractionId: String? = null,
+        val tab: InboxTab = InboxTab.Actionable,
+    ) : Destination
 
     /** Every run in flight, regardless of which project or task it belongs to. */
     data class Runs(val from: Destination) : Destination
@@ -143,8 +144,7 @@ private fun Destination.project(): ProjectDto? = when (this) {
     is Destination.Task -> project
     is Destination.Run -> project
     is Destination.Agent -> from.project()
-    is Destination.Interactions -> from.project()
-    is Destination.Activities -> from.project()
+    is Destination.Inbox -> from.project()
     is Destination.Runs -> from.project()
     is Destination.Workers -> from.project()
     is Destination.Settings -> from.project()
@@ -264,12 +264,11 @@ fun App() {
         // Back has to lead somewhere the user recognises. Opening a second notification while
         // already on a pushed-to screen would otherwise make that screen its own parent.
         val from = when (here) {
-            is Destination.Interactions -> here.from
-            is Destination.Activities -> here.from
+            is Destination.Inbox -> here.from
             else -> here
         }
         val opened = when (route) {
-            is PushRoute.Question -> Destination.Interactions(from = from, focusInteractionId = route.interactionId)
+            is PushRoute.Question -> Destination.Inbox(from = from, focusInteractionId = route.interactionId)
             is PushRoute.Activity -> {
                 val taskId = route.taskId
                 val runId = route.runId
@@ -283,7 +282,7 @@ fun App() {
                         from = from,
                     )
                 } else {
-                    Destination.Activities(from = from)
+                    Destination.Inbox(from = from, tab = InboxTab.Feed)
                 }
             }
         }
@@ -313,7 +312,8 @@ fun App() {
             api.close()
         }
     }
-    val pendingInteractions = summary.interactions.size
+    // Everything waiting, not only questions: the drawer's one entry now stands for all of it.
+    val actionable = summary.actionableCount
 
     /**
      * The drawer's contents. Built here rather than inside each screen because the menu is about
@@ -351,16 +351,9 @@ fun App() {
         )
         add(
             MenuEntry(
-                label = if (pendingInteractions > 0) "Вопросы ($pendingInteractions)" else "Вопросы",
-                onClick = { go(Destination.Interactions(destination)) },
-                enabled = destination !is Destination.Interactions,
-            ),
-        )
-        add(
-            MenuEntry(
-                label = if (summary.unseen > 0) "Активности (${summary.unseen})" else "Активности",
-                onClick = { go(Destination.Activities(destination)) },
-                enabled = destination !is Destination.Activities,
+                label = if (actionable > 0) "Входящие ($actionable)" else "Входящие",
+                onClick = { go(Destination.Inbox(destination)) },
+                enabled = destination !is Destination.Inbox,
             ),
         )
         add(
@@ -476,31 +469,19 @@ fun App() {
                 },
             )
 
-            is Destination.Interactions -> InteractionsScreen(
+            is Destination.Inbox -> InboxScreen(
                 session = current,
                 menu = menu,
                 focusInteractionId = where.focusInteractionId,
+                initialTab = where.tab,
                 onBack = { goBack(where.from) },
                 onOpenSettings = { go(Destination.Settings(where)) },
                 onOpenProfile = { go(Destination.Profile(where)) },
-                // A question knows its project by id and name only, which is all the task screen and
-                // the drawer need — the full project row is never loaded just to navigate.
+                // An inbox row knows its project by id and name only, which is all the task screen
+                // and the drawer need — the full project row is never loaded just to navigate.
                 onOpenTask = { projectId, projectName, taskId ->
-                    go(Destination.Task(ProjectDto(id = projectId, name = projectName ?: "Проект"), taskId))
+                    go(Destination.Task(ProjectDto(id = projectId, name = projectName ?: "Проект"), taskId, from = where))
                 },
-            )
-
-            is Destination.Activities -> ActivitiesScreen(
-                session = current,
-                menu = menu,
-                onBack = { goBack(where.from) },
-                onOpenSettings = { go(Destination.Settings(where)) },
-                onOpenProfile = { go(Destination.Profile(where)) },
-                onOpenInteraction = { interactionId ->
-                    go(Destination.Interactions(from = where, focusInteractionId = interactionId))
-                },
-                // A feed row knows its project by id and name only — the same shortcut the questions
-                // screen takes, since navigating never needs the full project row.
                 onOpenRun = { projectId, projectName, taskId, runId ->
                     go(
                         Destination.Run(

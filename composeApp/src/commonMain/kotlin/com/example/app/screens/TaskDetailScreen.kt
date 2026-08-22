@@ -39,11 +39,16 @@ import com.composeunstyled.Text
 import com.example.app.components.AppButton
 import com.example.app.components.AppScaffold
 import com.example.app.components.AppTextField
+import com.example.app.components.GroupedCard
+import com.example.app.components.InsetDivider
+import com.example.app.components.ListRow
+import com.example.app.components.StatusIcon
 import com.example.app.components.MenuEntry
 import com.example.app.data.AgentizApi
 import com.example.app.data.ApiException
 import com.example.app.data.AttachmentDto
 import com.example.app.data.CommentDto
+import com.example.app.data.InboxItemDto
 import com.example.app.data.InteractionDto
 import com.example.app.data.LocalStore
 import com.example.app.data.RunDto
@@ -352,6 +357,21 @@ fun TaskDetailScreen(
                             Text(text = error!!, style = AppTheme.Label, color = AppTheme.Danger)
                         }
 
+                        // What this task is waiting on from a person, stated on the task itself.
+                        // Questions are left out: they are answerable right below, as full cards,
+                        // and naming them twice would read as two separate things to do.
+                        val waiting = current.actionRequired.filterNot { it.kind == "question" }
+                        if (waiting.isNotEmpty()) {
+                            Spacer(Modifier.height(16.dp))
+                            WaitingOnYou(
+                                items = waiting,
+                                onOpen = { item ->
+                                    val run = runList.firstOrNull { it.id == item.runId }
+                                    if (run != null) onOpenRun(run, runList.size - runList.indexOf(run))
+                                },
+                            )
+                        }
+
                         // Above the run controls on purpose: while a question is open the pipeline is
                         // not going anywhere, so it is the only thing on this screen worth acting on.
                         current.pendingInteractions.forEach { interaction ->
@@ -574,6 +594,38 @@ private fun RunQuickLinks(
                         scope.launch { requesters[run.id]?.bringIntoView() }
                     }
                     .padding(horizontal = 12.dp, vertical = 6.dp),
+            )
+        }
+    }
+}
+
+/**
+ * «Сейчас ждёт вас» — the decisions this task is parked on, above everything else on the screen.
+ *
+ * The task screen used to state only a status word: "ждёт ревью" was something a reader had to
+ * deduce from a run's page, and a failed push was invisible here entirely. Same rows the inbox
+ * shows, in the same words (the server spells both), reduced to a line apiece because the decision
+ * itself is made where the diff is.
+ */
+@Composable
+private fun WaitingOnYou(items: List<InboxItemDto>, onOpen: (InboxItemDto) -> Unit) {
+    SectionTitle("Сейчас ждёт вас")
+    Spacer(Modifier.height(8.dp))
+    GroupedCard {
+        items.forEachIndexed { index, item ->
+            if (index > 0) InsetDivider()
+            ListRow(
+                title = item.headline,
+                subtitle = listOfNotNull(item.badge, item.facts?.takeIf { it.isNotBlank() }).joinToString(" · "),
+                onClick = { onOpen(item) },
+                leading = {
+                    StatusIcon(
+                        when (item.kind) {
+                            "push_failed", "reset_failed" -> "failed"
+                            else -> "waiting_review"
+                        },
+                    )
+                },
             )
         }
     }
