@@ -363,12 +363,17 @@ fun TaskDetailScreen(
                         val waiting = current.actionRequired.filterNot { it.kind == "question" }
                         if (waiting.isNotEmpty()) {
                             Spacer(Modifier.height(16.dp))
-                            WaitingOnYou(
+                            // The same block the run screen leads with, and it decides here too:
+                            // a link to the run was one navigation short of an answer, and for a
+                            // review of an empty diff the run screen has nothing more to add.
+                            ActionRequiredSection(
+                                session = session,
                                 items = waiting,
-                                onOpen = { item ->
+                                onOpenRun = { item ->
                                     val run = runList.firstOrNull { it.id == item.runId }
                                     if (run != null) onOpenRun(run, runList.size - runList.indexOf(run))
                                 },
+                                onChanged = { reloadKey++ },
                             )
                         }
 
@@ -594,38 +599,6 @@ private fun RunQuickLinks(
                         scope.launch { requesters[run.id]?.bringIntoView() }
                     }
                     .padding(horizontal = 12.dp, vertical = 6.dp),
-            )
-        }
-    }
-}
-
-/**
- * «Сейчас ждёт вас» — the decisions this task is parked on, above everything else on the screen.
- *
- * The task screen used to state only a status word: "ждёт ревью" was something a reader had to
- * deduce from a run's page, and a failed push was invisible here entirely. Same rows the inbox
- * shows, in the same words (the server spells both), reduced to a line apiece because the decision
- * itself is made where the diff is.
- */
-@Composable
-private fun WaitingOnYou(items: List<InboxItemDto>, onOpen: (InboxItemDto) -> Unit) {
-    SectionTitle("Сейчас ждёт вас")
-    Spacer(Modifier.height(8.dp))
-    GroupedCard {
-        items.forEachIndexed { index, item ->
-            if (index > 0) InsetDivider()
-            ListRow(
-                title = item.headline,
-                subtitle = listOfNotNull(item.badge, item.facts?.takeIf { it.isNotBlank() }).joinToString(" · "),
-                onClick = { onOpen(item) },
-                leading = {
-                    StatusIcon(
-                        when (item.kind) {
-                            "push_failed", "reset_failed" -> "failed"
-                            else -> "waiting_review"
-                        },
-                    )
-                },
             )
         }
     }

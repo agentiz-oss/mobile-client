@@ -189,6 +189,13 @@ data class RunDto(
      * carries neither.
      */
     val instruction: RunInstructionDto? = null,
+    /**
+     * What this run wants from a person, in the same shape the inbox renders. The run screen puts
+     * it above everything the run produced: a run that stopped on a question, on a review or on a
+     * failure used to say so only through its status word, leaving the reader to work out what the
+     * remedy was. Empty on an older server and on a run nobody has to touch.
+     */
+    val actionRequired: List<InboxItemDto> = emptyList(),
 )
 
 /**
@@ -393,6 +400,14 @@ data class TasksResponse(val data: List<TaskDto> = emptyList())
 
 @Serializable
 data class TaskResponse(val data: TaskDto)
+
+/** Body of POST /tasks/{id}/status — only the statuses a person sets by hand are accepted. */
+@Serializable
+data class TaskStatusRequest(val status: String)
+
+/** Answer of POST /tasks/{taskId}/runs/{runId}/apply. */
+@Serializable
+data class ApplyDiffResponse(val data: JsonObject? = null)
 
 @Serializable
 data class TaskDetailResponse(val data: TaskDetailDto)
@@ -677,6 +692,12 @@ data class InboxItemDto(
     val badge: String = "",
     val headline: String = "",
     val facts: String? = null,
+    /**
+     * What is going on and what each button will do about it, written by the server. The list is
+     * unreadable without it for anything but a question: "ревью, 0 файлов, кнопка Отклонить" states
+     * a state machine, not a choice a person can make.
+     */
+    val explain: String? = null,
     val projectId: String = "",
     val projectName: String? = null,
     val taskId: String? = null,
@@ -698,6 +719,12 @@ data class InboxActionDto(
     val key: String,
     val label: String,
     val style: String = "default",
+    /**
+     * The argument the endpoint takes when one key means different things on different rows —
+     * today only `close_task`, which is `done` after a pull request and `cancelled` after a run
+     * that will not be retried.
+     */
+    val value: String? = null,
 )
 
 @Serializable

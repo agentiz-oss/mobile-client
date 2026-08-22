@@ -7,6 +7,7 @@ import androidx.compose.ui.test.v2.runComposeUiTest
 import com.example.app.data.InboxActionDto
 import com.example.app.data.InboxItemDto
 import com.example.app.data.RunInstructionDto
+import com.example.app.screens.ActionRequiredCard
 import com.example.app.screens.InboxRow
 import com.example.app.screens.InstructionCard
 import com.example.app.screens.formatWaiting
@@ -127,5 +128,45 @@ class InboxRowTest {
         val day = remaining.toInt() + 1
         fun two(value: Int) = value.toString().padStart(2, '0')
         return "$year-${two(month + 1)}-${two(day)}T${two(minutesOfDay / 60)}:${two(minutesOfDay % 60)}:00Z"
+    }
+    @OptIn(ExperimentalTestApi::class)
+    @Test
+    fun `a row explains what its buttons will do`() = runComposeUiTest {
+        // The complaint this answers: «ревью, 0 файлов, кнопка Отклонить — непонятно, что делать».
+        val stuck = review.copy(
+            kind = "no_changes",
+            badge = "без изменений",
+            headline = "Запуск ничего не изменил",
+            explain = "Одобрять нечего. Папка воркера остаётся занятой, пока её не освободить.",
+            actions = listOf(InboxActionDto(key = "reject", label = "Освободить папку")),
+        )
+        setContent { InboxRow(item = stuck, onAction = {}, onOpen = {}) }
+
+        onNodeWithText("Одобрять нечего. Папка воркера остаётся занятой, пока её не освободить.").assertExists()
+        onNodeWithText("Освободить папку").assertExists()
+    }
+
+    @OptIn(ExperimentalTestApi::class)
+    @Test
+    fun `the card a run leads with carries the whole explanation and acts on it`() = runComposeUiTest {
+        var acted: String? = null
+        val failed = review.copy(
+            kind = "run_failed",
+            badge = "ошибка",
+            headline = "Worker job queued",
+            facts = null,
+            explain = "Задача осталась несделанной, и сама она больше ничего не предпримет.",
+            actions = listOf(
+                InboxActionDto(key = "rerun", label = "Запустить ещё раз", style = "primary"),
+                InboxActionDto(key = "close_task", label = "Закрыть задачу", value = "cancelled"),
+            ),
+        )
+        setContent { ActionRequiredCard(item = failed, onAction = { acted = it.value ?: it.key }) }
+
+        onNodeWithText("Worker job queued").assertExists()
+        onNodeWithText("Задача осталась несделанной, и сама она больше ничего не предпримет.").assertExists()
+        // The status «Закрыть задачу» means is the server's, and the card passes it back untouched.
+        onNodeWithText("Закрыть задачу").performClick()
+        assertEquals("cancelled", acted)
     }
 }

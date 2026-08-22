@@ -213,8 +213,20 @@ fun InboxScreen(
     }
 
     fun act(item: InboxItemDto, action: InboxActionDto) {
+        val taskId = item.taskId
+        val runId = item.runId
         when (action.key) {
             "answer", "approve", "reject" -> expand(item, action.key)
+            // The three that need no form: another attempt, the held diff, and closing a task
+            // whose remaining resolution happens outside Agentiz. The caption and, for
+            // `close_task`, the status itself are the server's — see InboxAction.value.
+            "rerun" -> if (taskId != null) submit(item) { api.runTask(session.token, taskId) }
+            "apply_diff" -> if (taskId != null && runId != null) {
+                submit(item) { api.applyRunDiff(session.token, taskId, runId) }
+            }
+            "close_task" -> if (taskId != null) {
+                submit(item) { api.setTaskStatus(session.token, taskId, action.value ?: "done") }
+            }
             "open_run" -> {
                 val taskId = item.taskId
                 val runId = item.runId
@@ -475,6 +487,20 @@ internal fun InboxRow(
                     }
                 }
 
+                // Two lines of "что это значит и что сделают кнопки". The list is scannable
+                // without it only for a question; «ревью, 0 файлов, [Отклонить]» is not a choice
+                // anybody can make from three words. The full text is on the run's own screen.
+                item.explain?.takeIf { it.isNotBlank() }?.let { explain ->
+                    Spacer(Modifier.height(6.dp))
+                    Text(
+                        text = explain,
+                        style = AppTheme.Footnote,
+                        color = AppTheme.Muted,
+                        maxLines = 2,
+                        overflow = TextOverflow.Ellipsis,
+                    )
+                }
+
                 formatRemaining(item.expiresAt)?.let { left ->
                     Spacer(Modifier.height(4.dp))
                     // The run is cancelled when this passes, so it is a consequence, not a footnote.
@@ -543,6 +569,8 @@ private fun KindIcon(kind: String) {
         "question" -> BellIcon(AppTheme.Muted, size = 18.dp)
         "push_failed", "reset_failed" -> AlertIcon(AppTheme.Danger, size = 18.dp)
         "review" -> GitPullRequestIcon(AppTheme.Muted, size = 18.dp)
+        "run_failed" -> AlertIcon(AppTheme.Danger, size = 18.dp)
+        "no_changes" -> IssueOpenedIcon(AppTheme.Muted, size = 18.dp)
         "held_diff" -> GitBranchIcon(AppTheme.Muted, size = 18.dp)
         "pr" -> GitPullRequestIcon(AppTheme.Accent, size = 18.dp)
         else -> IssueOpenedIcon(AppTheme.Muted, size = 18.dp)
@@ -551,12 +579,12 @@ private fun KindIcon(kind: String) {
 
 /** Blue for "somebody has to look", red for "something is broken" — the same split as the glyph. */
 private fun dotColor(kind: String) = when (kind) {
-    "push_failed", "reset_failed" -> AppTheme.Danger
+    "push_failed", "reset_failed", "run_failed" -> AppTheme.Danger
     else -> AppTheme.Accent
 }
 
 private fun badgeVariant(kind: String) = when (kind) {
-    "push_failed", "reset_failed" -> BadgeVariant.Destructive
+    "push_failed", "reset_failed", "run_failed" -> BadgeVariant.Destructive
     "question", "pr" -> BadgeVariant.Accent
     else -> BadgeVariant.Secondary
 }
