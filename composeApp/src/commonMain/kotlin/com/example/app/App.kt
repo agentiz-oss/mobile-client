@@ -476,6 +476,9 @@ fun App() {
                 initialTab = where.tab,
                 onBack = { goBack(where.from) },
                 onOpenSettings = { go(Destination.Settings(where)) },
+                // A row's own notification panel covers its type in its project; the full matrix is
+                // one link away from it rather than a screen the reader has to find on their own.
+                onOpenNotifications = { go(Destination.Notifications(where)) },
                 onOpenProfile = { go(Destination.Profile(where)) },
                 // An inbox row knows its project by id and name only, which is all the task screen
                 // and the drawer need — the full project row is never loaded just to navigate.

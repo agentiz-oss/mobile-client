@@ -670,6 +670,8 @@ data class ActivitySummaryDto(
     val proposals: List<SummaryProposalDto> = emptyList(),
     val heldRuns: List<SummaryHeldRunDto> = emptyList(),
     val actionableCount: Int = 0,
+    /** How many rows this reader has hidden — the "Скрытые (N)" switch, and nothing else. */
+    val dismissedCount: Int = 0,
     val unseen: Int = 0,
 )
 
@@ -706,7 +708,37 @@ data class InboxItemDto(
     val waitingSince: String? = null,
     val expiresAt: String? = null,
     val priority: Int = 0,
+    /**
+     * Whether this row can be closed by simply reading it — true for the reminders (a failed run,
+     * an opened PR) and never for anything that holds a worker's directory or an agent's turn. The
+     * server decides; the client only shows the gesture where it is allowed.
+     */
+    val dismissible: Boolean = false,
+    /** Non-null on a hidden row, which only arrives when the reader asked to see hidden rows. */
+    val dismissedAt: String? = null,
+    /** How this row's event is delivered right now, and which rule decided that. */
+    val notify: InboxNotifyDto? = null,
     val actions: List<InboxActionDto> = emptyList(),
+)
+
+/**
+ * The notification state of one row.
+ *
+ * The inbox and the уведомления screen are two views of one thing: a row exists because an event
+ * was recorded, and whether that event also woke anybody is the policy's decision. [label] is the
+ * server's one-line account of it («пуш выключен правилом проекта»); [scope] names the rule so the
+ * row can offer the switch that undoes exactly that one, and [pipelineSpecId] is the pipeline
+ * scope this row resolved against, when its run had one.
+ */
+@Serializable
+data class InboxNotifyDto(
+    val typeLabel: String = "",
+    val push: String = "on",
+    val dashboard: String = "on",
+    val scope: String = "builtin",
+    val mutedByScope: Boolean = false,
+    val pipelineSpecId: String? = null,
+    val label: String = "",
 )
 
 /** [key] is what the client dispatches on; [label] is the caption, spelled once on the server. */
@@ -719,6 +751,20 @@ data class InboxActionDto(
 
 @Serializable
 data class ActivitySummaryResponse(val data: ActivitySummaryDto = ActivitySummaryDto())
+
+/** Body of the two inbox-dismissal calls: the row's own id, `run:<id>` / `pr:<id>`. */
+@Serializable
+data class InboxItemRequest(val itemId: String)
+
+/** What the dismissal calls answer: the row as it now stands, already carrying its undo action. */
+@Serializable
+data class InboxDismissalResponse(val data: InboxDismissalDto = InboxDismissalDto())
+
+@Serializable
+data class InboxDismissalDto(
+    val item: InboxItemDto? = null,
+    val dismissed: Boolean = false,
+)
 
 /** Body of POST /activities/seen; an omitted [at] means "now". */
 @Serializable

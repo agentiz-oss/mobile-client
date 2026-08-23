@@ -319,10 +319,35 @@ class AgentizApi(baseUrl: String = platformDefaultBaseUrl()) {
      * Everything actionable right now (questions, reviews, held diffs) plus the unseen counter —
      * the drawer badge, the app badge and the activities screen's top section, in one request.
      */
-    suspend fun activitySummary(token: String): ActivitySummaryDto =
+    suspend fun activitySummary(token: String, includeDismissed: Boolean = false): ActivitySummaryDto =
         client.get("$root/activities/summary") {
             bearerAuth(token)
+            if (includeDismissed) url { parameters.append("includeDismissed", "true") }
         }.decodeOrThrow<ActivitySummaryResponse>().data
+
+    /**
+     * «Прочитал, разбираться не буду» — hides one inbox row for this reader.
+     *
+     * Only rows the server marks `dismissible` (a failed run, an opened PR — the ones nothing in
+     * Agentiz will ever close by itself); anything holding a worker's directory comes back as 409.
+     * Nothing about the task or the run changes, and the same failure happening again is a new row.
+     */
+    suspend fun dismissInboxItem(token: String, itemId: String) {
+        client.post("$root/activities/inbox/dismiss") {
+            bearerAuth(token)
+            contentType(ContentType.Application.Json)
+            setBody(InboxItemRequest(itemId = itemId))
+        }.decodeOrThrow<InboxDismissalResponse>()
+    }
+
+    /** The undo of the above, so a mis-swipe costs a tap. */
+    suspend fun restoreInboxItem(token: String, itemId: String) {
+        client.post("$root/activities/inbox/restore") {
+            bearerAuth(token)
+            contentType(ContentType.Application.Json)
+            setBody(InboxItemRequest(itemId = itemId))
+        }.decodeOrThrow<InboxDismissalResponse>()
+    }
 
     /** "Ленту видел" — moves the per-user mark the unseen badge counts against. */
     suspend fun markActivitiesSeen(token: String) {

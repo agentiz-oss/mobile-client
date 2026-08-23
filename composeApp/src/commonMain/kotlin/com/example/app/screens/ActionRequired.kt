@@ -2,6 +2,7 @@ package com.example.app.screens
 
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.FlowRow
@@ -22,11 +23,13 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.platform.LocalUriHandler
+import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.unit.dp
 import com.composeunstyled.Text
 import com.example.app.components.AppButton
 import com.example.app.components.Badge
 import com.example.app.components.BadgeSize
+import com.example.app.components.BellIcon
 import com.example.app.components.BadgeVariant
 import com.example.app.components.ButtonSize
 import com.example.app.components.ButtonVariant
@@ -132,6 +135,10 @@ fun ActionRequiredSection(
         val runId = item.runId
         when (action.key) {
             "answer", "approve", "reject" -> expand(item, action.key)
+            // Same exit as in the inbox: a reminder nobody will ever resolve can be closed by
+            // reading it, here too, or the row would come back the moment the screen reloads.
+            "dismiss" -> submit(item) { api.dismissInboxItem(session.token, item.id) }
+            "restore" -> submit(item) { api.restoreInboxItem(session.token, item.id) }
             "rerun" -> if (taskId != null) submit(item) { api.runTask(session.token, taskId) }
             "apply_diff" -> if (taskId != null && runId != null) {
                 submit(item) { api.applyRunDiff(session.token, taskId, runId) }
@@ -178,6 +185,10 @@ fun ActionRequiredSection(
                         submit(item) { api.rejectProposal(session.token, proposalId, revision) }
                     }
                 },
+                onOpenNotify = { expand(item, "notify") },
+                notifyPanel = {
+                    InboxNotifySection(session = session, item = item, onChanged = onChanged)
+                },
             )
         }
     }
@@ -201,6 +212,8 @@ internal fun ActionRequiredCard(
     onAnswer: (action: String, content: kotlinx.serialization.json.JsonObject?) -> Unit = { _, _ -> },
     onApprove: (revision: Int, targetBranch: String?, commitMessage: String?) -> Unit = { _, _, _ -> },
     onReject: (revision: Int) -> Unit = {},
+    onOpenNotify: (() -> Unit)? = null,
+    notifyPanel: (@Composable () -> Unit)? = null,
 ) {
     val broken = item.kind == "push_failed" || item.kind == "reset_failed" || item.kind == "run_failed"
     Column(
@@ -237,6 +250,28 @@ internal fun ActionRequiredCard(
             Spacer(Modifier.height(6.dp))
             Text(text = "ответ ждут ещё $left", style = AppTheme.Footnote, color = AppTheme.Warning)
         }
+        // The same line the inbox row carries: how this event is delivered, and the way to change
+        // it. One wording, one panel, wherever the row is drawn.
+        item.notify?.let { notify ->
+            Spacer(Modifier.height(8.dp))
+            Row(
+                modifier = Modifier
+                    .let { base -> if (onOpenNotify != null) base.clickable(role = Role.Button) { onOpenNotify() } else base },
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(6.dp),
+            ) {
+                BellIcon(
+                    tint = if (notify.push == "off") AppTheme.Danger else AppTheme.Muted,
+                    size = 14.dp,
+                    muted = notify.push == "off",
+                )
+                Text(
+                    text = if (onOpenNotify != null) "${notify.label} · настроить" else notify.label,
+                    style = AppTheme.Footnote,
+                    color = if (notify.push == "off") AppTheme.Danger else AppTheme.Muted,
+                )
+            }
+        }
         if (item.actions.isNotEmpty()) {
             Spacer(Modifier.height(12.dp))
             FlowRow(
@@ -262,6 +297,7 @@ internal fun ActionRequiredCard(
         if (expanded) {
             Spacer(Modifier.height(12.dp))
             when {
+                mode == "notify" && notifyPanel != null -> notifyPanel()
                 loadingDetail -> Text(text = "Загрузка…", style = AppTheme.Label, color = AppTheme.Muted)
                 interaction != null -> InteractionCard(interaction = interaction, busy = busy, onAnswer = onAnswer)
                 proposal != null -> ProposalReviewSection(

@@ -42,12 +42,15 @@ import com.example.app.components.BadgeVariant
 import com.example.app.components.BellIcon
 import com.example.app.components.ButtonSize
 import com.example.app.components.ButtonVariant
+import com.example.app.components.CheckIcon
 import com.example.app.components.DotFillIcon
 import com.example.app.components.GitBranchIcon
 import com.example.app.components.GitPullRequestIcon
 import com.example.app.components.IssueOpenedIcon
 import com.example.app.components.MenuEntry
 import com.example.app.components.PullToRefresh
+import com.example.app.components.SwipeAction
+import com.example.app.components.SwipeableRow
 import com.example.app.data.AgentizApi
 import com.example.app.data.ApiException
 import com.example.app.data.InboxActionDto
@@ -99,6 +102,8 @@ fun InboxScreen(
      */
     focusInteractionId: String? = null,
     initialTab: InboxTab = InboxTab.Actionable,
+    /** The full notification matrix, from the panel a row opens for its own event type. */
+    onOpenNotifications: (() -> Unit)? = null,
 ) {
     val api = remember(session.serverUrl) { AgentizApi(session.serverUrl) }
     DisposableEffect(api) { onDispose { api.close() } }
@@ -111,6 +116,10 @@ fun InboxScreen(
     // this is the screen a tapped notification lands on. What was cached may already have been
     // dealt with; the first poll (immediate, not after INBOX_POLL_MS) corrects it.
     var items by remember { mutableStateOf(LocalStore.loadInbox()) }
+    // Dismissed rows are off the list until asked for. The count comes with every summary, so the
+    // switch can exist without ever fetching them.
+    var showDismissed by remember { mutableStateOf(false) }
+    var dismissedCount by remember { mutableStateOf(0) }
     var error by remember { mutableStateOf<String?>(null) }
     var reloadKey by remember { mutableStateOf(0) }
     var refreshing by remember { mutableStateOf(false) }
@@ -129,9 +138,11 @@ fun InboxScreen(
 
     suspend fun load() {
         try {
-            val summary = api.activitySummary(session.token)
+            val summary = api.activitySummary(session.token, includeDismissed = showDismissed)
             items = summary.items
-            LocalStore.saveInbox(summary.items)
+            dismissedCount = summary.dismissedCount
+            // Only the live list is cached: a hidden row must not be what the app opens on.
+            if (!showDismissed) LocalStore.saveInbox(summary.items)
             if (focusInteractionId != null && summary.items.none { it.interactionId == focusInteractionId }) {
                 // Best effort: a question the server will not hand over is simply not shown, never
                 // an error on the list.
@@ -149,9 +160,9 @@ fun InboxScreen(
         }
     }
 
-    LaunchedEffect(reloadKey) { load() }
+    LaunchedEffect(reloadKey, showDismissed) { load() }
 
-    LaunchedEffect(tab) {
+    LaunchedEffect(tab, showDismissed) {
         if (tab != InboxTab.Actionable) return@LaunchedEffect
         while (true) {
             delay(INBOX_POLL_MS)
@@ -174,6 +185,12 @@ fun InboxScreen(
         expandedMode = mode
         expandedInteraction = null
         expandedProposal = null
+        // The notification panel is about the row's *type*, not about the entity behind it —
+        // nothing to fetch, and the policy it edits is loaded by the panel itself.
+        if (mode == "notify") {
+            expandLoading = false
+            return
+        }
         expandLoading = true
         scope.launch {
             try {
@@ -223,6 +240,10 @@ fun InboxScreen(
         val runId = item.runId
         when (action.key) {
             "answer", "approve", "reject" -> expand(item, action.key)
+            // «Прочитал, разбираться не буду». Nothing about the run or the task changes — the row
+            // just stops being in this reader's list, and the same failure again is a new row.
+            "dismiss" -> submit(item) { api.dismissInboxItem(session.token, item.id) }
+            "restore" -> submit(item) { api.restoreInboxItem(session.token, item.id) }
             // The two that need no form: another attempt and applying the held diff.
             "rerun" -> if (taskId != null) submit(item) { api.runTask(session.token, taskId) }
             "apply_diff" -> if (taskId != null && runId != null) {
@@ -243,7 +264,7 @@ fun InboxScreen(
     val current = items
     AppScaffold(
         title = "Входящие",
-        subtitle = current?.size?.takeIf { it > 0 }?.let { "$it требуют действия" },
+        subtitle = current?.count { it.dismissedAt == null }?.takeIf { it > 0 }?.let { "$it требуют действия" },
         menu = menu,
         onOpenSettings = onOpenSettings,
         onOpenProfile = onOpenProfile,
@@ -286,6 +307,16 @@ fun InboxScreen(
                                 }
                             }
 
+                            if (dismissedCount > 0 || showDismissed) {
+                                item(key = "dismissed-switch") {
+                                    HiddenRowsSwitch(
+                                        count = dismissedCount,
+                                        showing = showDismissed,
+                                        onToggle = { showDismissed = !showDismissed },
+                                    )
+                                }
+                            }
+
                             closedFocus?.let { closed ->
                                 item(key = "closed-${closed.id}") {
                                     Column(modifier = Modifier.padding(16.dp)) { ClosedInteractionNote(closed) }
@@ -305,52 +336,116 @@ fun InboxScreen(
                             }
 
                             items(current, key = { it.id }) { row ->
-                                InboxRow(
-                                    item = row,
-                                    busy = busyId == row.id,
-                                    expanded = expandedId == row.id,
-                                    loadingDetail = expandedId == row.id && expandLoading,
-                                    interaction = if (expandedId == row.id) expandedInteraction else null,
-                                    proposal = if (expandedId == row.id) expandedProposal else null,
-                                    initialMode = if (expandedId == row.id) expandedMode else null,
-                                    onAction = { action -> act(row, action) },
-                                    // The row itself goes where the thing lives — its run, or its
-                                    // task when there is no run. GitHub's inbox rows navigate on
-                                    // tap and keep their buttons for the decision itself.
-                                    onOpen = {
-                                        val taskId = row.taskId
-                                        val runId = row.runId
-                                        when {
-                                            taskId != null && runId != null ->
-                                                onOpenRun(row.projectId, row.projectName, taskId, runId)
-                                            taskId != null -> onOpenTask(row.projectId, row.projectName, taskId)
-                                        }
+                                // Two shortcuts behind the row, both of which also exist inside it:
+                                // drag right for the notification rules (the «пуш …» line opens the
+                                // same panel), drag left to wave a reminder away (the last button
+                                // does the same). A gesture nobody discovers must never be the only
+                                // way to reach something.
+                                SwipeableRow(
+                                    start = SwipeAction(
+                                        label = "Уведомления",
+                                        background = AppTheme.Accent,
+                                        icon = { tint -> BellIcon(tint, size = 16.dp, muted = row.notify?.push == "off") },
+                                        onAction = { expand(row, "notify") },
+                                    ),
+                                    end = if (row.dismissible && row.dismissedAt == null) {
+                                        SwipeAction(
+                                            label = "Не требует действий",
+                                            background = AppTheme.Muted,
+                                            icon = { tint -> CheckIcon(tint, size = 16.dp) },
+                                            // The same call the button makes, including the local
+                                            // removal: the gesture is a shortcut, not a second path.
+                                            onAction = { submit(row) { api.dismissInboxItem(session.token, row.id) } },
+                                        )
+                                    } else {
+                                        null
                                     },
-                                    onAnswer = { answerAction, content ->
-                                        val interactionId = row.interactionId
-                                        if (interactionId != null) {
-                                            submit(row) { api.answerInteraction(session.token, interactionId, answerAction, content) }
-                                        }
-                                    },
-                                    onApprove = { revision, branch, message ->
-                                        val proposalId = row.proposalId
-                                        if (proposalId != null) {
-                                            submit(row) { api.approveProposal(session.token, proposalId, revision, branch, message) }
-                                        }
-                                    },
-                                    onReject = { revision ->
-                                        val proposalId = row.proposalId
-                                        if (proposalId != null) {
-                                            submit(row) { api.rejectProposal(session.token, proposalId, revision) }
-                                        }
-                                    },
-                                )
+                                ) {
+                                    InboxRow(
+                                        item = row,
+                                        busy = busyId == row.id,
+                                        expanded = expandedId == row.id,
+                                        loadingDetail = expandedId == row.id && expandLoading,
+                                        interaction = if (expandedId == row.id) expandedInteraction else null,
+                                        proposal = if (expandedId == row.id) expandedProposal else null,
+                                        initialMode = if (expandedId == row.id) expandedMode else null,
+                                        onAction = { action -> act(row, action) },
+                                        // The row itself goes where the thing lives — its run, or its
+                                        // task when there is no run. GitHub's inbox rows navigate on
+                                        // tap and keep their buttons for the decision itself.
+                                        onOpen = {
+                                            val taskId = row.taskId
+                                            val runId = row.runId
+                                            when {
+                                                taskId != null && runId != null ->
+                                                    onOpenRun(row.projectId, row.projectName, taskId, runId)
+                                                taskId != null -> onOpenTask(row.projectId, row.projectName, taskId)
+                                            }
+                                        },
+                                        onAnswer = { answerAction, content ->
+                                            val interactionId = row.interactionId
+                                            if (interactionId != null) {
+                                                submit(row) { api.answerInteraction(session.token, interactionId, answerAction, content) }
+                                            }
+                                        },
+                                        onApprove = { revision, branch, message ->
+                                            val proposalId = row.proposalId
+                                            if (proposalId != null) {
+                                                submit(row) { api.approveProposal(session.token, proposalId, revision, branch, message) }
+                                            }
+                                        },
+                                        onReject = { revision ->
+                                            val proposalId = row.proposalId
+                                            if (proposalId != null) {
+                                                submit(row) { api.rejectProposal(session.token, proposalId, revision) }
+                                            }
+                                        },
+                                        onOpenNotify = { expand(row, "notify") },
+                                        notifyPanel = {
+                                            InboxNotifySection(
+                                                session = session,
+                                                item = row,
+                                                // The row's own «пуш …» line is server-computed, so it
+                                                // only tells the truth again after a reload.
+                                                onChanged = { scope.launch { load() } },
+                                                onOpenAllSettings = onOpenNotifications,
+                                            )
+                                        },
+                                    )
+                                }
                             }
                         }
                     }
                 }
             }
         }
+    }
+}
+
+/**
+ * «Скрытые (3)» — the way back to the rows this reader waved away.
+ *
+ * Shown only when there are any. Dismissal has to be undoable to be safe enough to offer as a
+ * swipe, and a count that sits above the list is what keeps "я это скрыл" from meaning "я это
+ * потерял".
+ */
+@Composable
+private fun HiddenRowsSwitch(count: Int, showing: Boolean, onToggle: () -> Unit) {
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .background(AppTheme.Background)
+            .clickable(role = Role.Button, onClick = onToggle)
+            .padding(horizontal = 16.dp, vertical = 10.dp),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(8.dp),
+    ) {
+        CheckIcon(AppTheme.Muted, size = 14.dp)
+        Text(
+            text = if (showing) "Скрытые показаны — вернуть список" else "Скрытые: $count — показать",
+            style = AppTheme.Footnote,
+            color = AppTheme.Muted,
+        )
     }
 }
 
@@ -418,6 +513,10 @@ internal fun InboxRow(
     onAnswer: (action: String, content: JsonObject?) -> Unit = { _, _ -> },
     onApprove: (revision: Int, targetBranch: String?, commitMessage: String?) -> Unit = { _, _, _ -> },
     onReject: (revision: Int) -> Unit = {},
+    /** The «пуш …» line's tap: the visible half of the swipe-right gesture. */
+    onOpenNotify: (() -> Unit)? = null,
+    /** Rendered in place of the entity's form when this row is expanded on its notification rules. */
+    notifyPanel: (@Composable () -> Unit)? = null,
 ) {
     Column(
         modifier = Modifier
@@ -508,6 +607,44 @@ internal fun InboxRow(
                     Text(text = "ответ ждут ещё $left", style = AppTheme.Footnote, color = AppTheme.Warning)
                 }
 
+                // Where this row stands in the notification settings, and the way into them.
+                // Deliberately on the row rather than only on a settings screen: "почему мне про
+                // это написали (или не написали)" is asked here, about this event, and the answer
+                // is one tap from the question instead of a hunt through a matrix of types.
+                item.notify?.let { notify ->
+                    Spacer(Modifier.height(8.dp))
+                    Row(
+                        modifier = Modifier
+                            .clip(RoundedCornerShape(999.dp))
+                            .let { base -> if (onOpenNotify != null) base.clickable(role = Role.Button) { onOpenNotify() } else base }
+                            .padding(vertical = 2.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(6.dp),
+                    ) {
+                        BellIcon(
+                            tint = if (notify.push == "off") AppTheme.Danger else AppTheme.Muted,
+                            size = 14.dp,
+                            muted = notify.push == "off",
+                        )
+                        Text(
+                            text = if (onOpenNotify != null) "${notify.label} · настроить" else notify.label,
+                            style = AppTheme.Footnote,
+                            color = if (notify.push == "off") AppTheme.Danger else AppTheme.Muted,
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis,
+                        )
+                    }
+                }
+
+                item.dismissedAt?.let {
+                    Spacer(Modifier.height(4.dp))
+                    Text(
+                        text = "скрыто вами",
+                        style = AppTheme.Footnote,
+                        color = AppTheme.Muted,
+                    )
+                }
+
                 if (item.actions.isNotEmpty()) {
                     Spacer(Modifier.height(10.dp))
                     FlowRow(
@@ -536,6 +673,7 @@ internal fun InboxRow(
         if (expanded) {
             Column(modifier = Modifier.fillMaxWidth().padding(start = 16.dp, end = 16.dp, bottom = 16.dp)) {
                 when {
+                    initialMode == "notify" && notifyPanel != null -> notifyPanel()
                     loadingDetail -> Text(text = "Загрузка…", style = AppTheme.Label, color = AppTheme.Muted)
                     interaction != null -> InteractionCard(
                         interaction = interaction,

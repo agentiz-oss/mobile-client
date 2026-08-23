@@ -6,6 +6,7 @@ import androidx.compose.ui.test.performClick
 import androidx.compose.ui.test.v2.runComposeUiTest
 import com.example.app.data.InboxActionDto
 import com.example.app.data.InboxItemDto
+import com.example.app.data.InboxNotifyDto
 import com.example.app.data.RunInstructionDto
 import com.example.app.screens.ActionRequiredCard
 import com.example.app.screens.InboxRow
@@ -144,6 +145,46 @@ class InboxRowTest {
 
         onNodeWithText("Одобрять нечего. Папка воркера остаётся занятой, пока её не освободить.").assertExists()
         onNodeWithText("Освободить папку").assertExists()
+    }
+
+    @OptIn(ExperimentalTestApi::class)
+    @Test
+    fun `a reminder says how it is delivered and offers the way out of the list`() = runComposeUiTest {
+        var acted: String? = null
+        var notifyOpened = false
+        val failed = review.copy(
+            kind = "run_failed",
+            badge = "ошибка",
+            headline = "Воркер не смог отчитаться серверу",
+            dismissible = true,
+            notify = InboxNotifyDto(
+                typeLabel = "Запуск завершился с ошибкой",
+                push = "off",
+                scope = "project",
+                mutedByScope = true,
+                label = "пуш выключен правилом проекта",
+            ),
+            actions = listOf(
+                InboxActionDto(key = "rerun", label = "Запустить ещё раз", style = "primary"),
+                InboxActionDto(key = "dismiss", label = "Не требует действий"),
+            ),
+        )
+        setContent {
+            InboxRow(
+                item = failed,
+                onAction = { acted = it.key },
+                onOpen = {},
+                onOpenNotify = { notifyOpened = true },
+            )
+        }
+
+        // Why this did (not) reach the phone, on the row itself — and the way into the rules.
+        onNodeWithText("пуш выключен правилом проекта · настроить").assertExists()
+        onNodeWithText("пуш выключен правилом проекта · настроить").performClick()
+        assertEquals(true, notifyOpened)
+
+        onNodeWithText("Не требует действий").performClick()
+        assertEquals("dismiss", acted)
     }
 
     @OptIn(ExperimentalTestApi::class)
