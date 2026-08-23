@@ -53,6 +53,7 @@ import com.example.app.data.ApiException
 import com.example.app.data.InboxActionDto
 import com.example.app.data.InboxItemDto
 import com.example.app.data.InteractionDto
+import com.example.app.data.LocalStore
 import com.example.app.data.ProposalDto
 import com.example.app.data.Session
 import com.example.app.theme.AppTheme
@@ -105,7 +106,11 @@ fun InboxScreen(
     val uriHandler = LocalUriHandler.current
 
     var tab by remember { mutableStateOf(initialTab) }
-    var items by remember { mutableStateOf<List<InboxItemDto>?>(null) }
+    // Seeded from the last poll that succeeded, so the screen opens on the list it showed last
+    // instead of a spinner — the same trade as the project list, and it matters more here because
+    // this is the screen a tapped notification lands on. What was cached may already have been
+    // dealt with; the first poll (immediate, not after INBOX_POLL_MS) corrects it.
+    var items by remember { mutableStateOf(LocalStore.loadInbox()) }
     var error by remember { mutableStateOf<String?>(null) }
     var reloadKey by remember { mutableStateOf(0) }
     var refreshing by remember { mutableStateOf(false) }
@@ -126,6 +131,7 @@ fun InboxScreen(
         try {
             val summary = api.activitySummary(session.token)
             items = summary.items
+            LocalStore.saveInbox(summary.items)
             if (focusInteractionId != null && summary.items.none { it.interactionId == focusInteractionId }) {
                 // Best effort: a question the server will not hand over is simply not shown, never
                 // an error on the list.

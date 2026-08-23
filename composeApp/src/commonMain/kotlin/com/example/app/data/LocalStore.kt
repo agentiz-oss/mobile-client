@@ -31,6 +31,18 @@ object LocalStore {
     fun loadProjects(): List<ProjectDto>? = decode(LocalCache.get("projects"))
     fun saveProjects(projects: List<ProjectDto>) = encode("projects", projects)
 
+    /**
+     * The inbox list ([screens.InboxScreen]'s first tab). Cached like the project list and read
+     * back for the same reason — a screen opened from a notification must not start on a spinner —
+     * but with one difference in meaning: these rows are computed from live entities, so a cached
+     * one may already have been dealt with elsewhere. It is shown only until the first poll of the
+     * screen answers, which is what makes it a seed rather than a source of truth; nothing is ever
+     * decided from it, because every button on a row calls the server and the server refuses a
+     * question that is already answered.
+     */
+    fun loadInbox(): List<InboxItemDto>? = decode(LocalCache.get("inbox"))
+    fun saveInbox(items: List<InboxItemDto>) = encode("inbox", items)
+
     fun loadTasks(projectId: String): List<TaskDto>? = decode(LocalCache.get("tasks:$projectId"))
     fun saveTasks(projectId: String, tasks: List<TaskDto>) = encode("tasks:$projectId", tasks)
 
