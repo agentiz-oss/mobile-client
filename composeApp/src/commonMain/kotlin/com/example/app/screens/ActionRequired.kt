@@ -136,10 +136,6 @@ fun ActionRequiredSection(
             "apply_diff" -> if (taskId != null && runId != null) {
                 submit(item) { api.applyRunDiff(session.token, taskId, runId) }
             }
-            // The server picks between «сделано» and «не будем делать»; the phone only passes it on.
-            "close_task" -> if (taskId != null) {
-                submit(item) { api.setTaskStatus(session.token, taskId, action.value ?: "done") }
-            }
             "open_run" -> onOpenRun(item)
             "open_url" -> item.url?.let { runCatching { uriHandler.openUri(it) } }
             else -> Unit

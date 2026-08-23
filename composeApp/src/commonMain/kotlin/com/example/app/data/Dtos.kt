@@ -401,10 +401,6 @@ data class TasksResponse(val data: List<TaskDto> = emptyList())
 @Serializable
 data class TaskResponse(val data: TaskDto)
 
-/** Body of POST /tasks/{id}/status — only the statuses a person sets by hand are accepted. */
-@Serializable
-data class TaskStatusRequest(val status: String)
-
 /** Answer of POST /tasks/{taskId}/runs/{runId}/apply. */
 @Serializable
 data class ApplyDiffResponse(val data: JsonObject? = null)
@@ -719,12 +715,6 @@ data class InboxActionDto(
     val key: String,
     val label: String,
     val style: String = "default",
-    /**
-     * The argument the endpoint takes when one key means different things on different rows —
-     * today only `close_task`, which is `done` after a pull request and `cancelled` after a run
-     * that will not be retried.
-     */
-    val value: String? = null,
 )
 
 @Serializable

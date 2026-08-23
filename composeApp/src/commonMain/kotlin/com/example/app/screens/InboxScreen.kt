@@ -217,15 +217,10 @@ fun InboxScreen(
         val runId = item.runId
         when (action.key) {
             "answer", "approve", "reject" -> expand(item, action.key)
-            // The three that need no form: another attempt, the held diff, and closing a task
-            // whose remaining resolution happens outside Agentiz. The caption and, for
-            // `close_task`, the status itself are the server's — see InboxAction.value.
+            // The two that need no form: another attempt and applying the held diff.
             "rerun" -> if (taskId != null) submit(item) { api.runTask(session.token, taskId) }
             "apply_diff" -> if (taskId != null && runId != null) {
                 submit(item) { api.applyRunDiff(session.token, taskId, runId) }
-            }
-            "close_task" -> if (taskId != null) {
-                submit(item) { api.setTaskStatus(session.token, taskId, action.value ?: "done") }
             }
             "open_run" -> {
                 val taskId = item.taskId

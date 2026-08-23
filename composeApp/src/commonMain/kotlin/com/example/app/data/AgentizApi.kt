@@ -144,18 +144,6 @@ class AgentizApi(baseUrl: String = platformDefaultBaseUrl()) {
         }.decodeOrThrow<RunResponse>().data
 
     /**
-     * Closes (or reopens) a task by hand — the exit for the two inbox rows nothing local resolves:
-     * an opened pull request and a run that will not be retried. The server refuses the statuses
-     * the pipeline owns, so a stale button cannot fake "running".
-     */
-    suspend fun setTaskStatus(token: String, taskId: String, status: String): TaskDto =
-        client.post("$root/tasks/$taskId/status") {
-            bearerAuth(token)
-            contentType(ContentType.Application.Json)
-            setBody(TaskStatusRequest(status))
-        }.decodeOrThrow<TaskResponse>().data
-
-    /**
      * Applies a diff the pipeline held back for approval. Same call the panel's button makes; a
      * second press comes back as a 409 rather than a second commit.
      */

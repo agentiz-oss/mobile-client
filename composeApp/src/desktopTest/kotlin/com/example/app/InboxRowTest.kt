@@ -158,15 +158,14 @@ class InboxRowTest {
             explain = "Задача осталась несделанной, и сама она больше ничего не предпримет.",
             actions = listOf(
                 InboxActionDto(key = "rerun", label = "Запустить ещё раз", style = "primary"),
-                InboxActionDto(key = "close_task", label = "Закрыть задачу", value = "cancelled"),
+                InboxActionDto(key = "open_run", label = "Открыть лог"),
             ),
         )
-        setContent { ActionRequiredCard(item = failed, onAction = { acted = it.value ?: it.key }) }
+        setContent { ActionRequiredCard(item = failed, onAction = { acted = it.key }) }
 
         onNodeWithText("Worker job queued").assertExists()
         onNodeWithText("Задача осталась несделанной, и сама она больше ничего не предпримет.").assertExists()
-        // The status «Закрыть задачу» means is the server's, and the card passes it back untouched.
-        onNodeWithText("Закрыть задачу").performClick()
-        assertEquals("cancelled", acted)
+        onNodeWithText("Запустить ещё раз").performClick()
+        assertEquals("rerun", acted)
     }
 }
