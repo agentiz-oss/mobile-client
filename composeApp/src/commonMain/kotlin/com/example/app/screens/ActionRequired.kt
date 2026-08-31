@@ -35,6 +35,7 @@ import com.example.app.components.ButtonSize
 import com.example.app.components.ButtonVariant
 import com.example.app.data.AgentizApi
 import com.example.app.data.ApiException
+import com.example.app.data.ApprovalDto
 import com.example.app.data.InboxActionDto
 import com.example.app.data.InboxItemDto
 import com.example.app.data.InteractionDto
@@ -78,6 +79,7 @@ fun ActionRequiredSection(
     var expandedMode by remember { mutableStateOf<String?>(null) }
     var interaction by remember { mutableStateOf<InteractionDto?>(null) }
     var proposal by remember { mutableStateOf<ProposalDto?>(null) }
+    var approval by remember { mutableStateOf<ApprovalDto?>(null) }
     var loadingDetail by remember { mutableStateOf(false) }
     var busyId by remember { mutableStateOf<String?>(null) }
     var error by remember { mutableStateOf<String?>(null) }
@@ -92,12 +94,17 @@ fun ActionRequiredSection(
         expandedMode = mode
         interaction = null
         proposal = null
+        approval = null
         loadingDetail = true
         scope.launch {
             try {
                 when {
                     item.interactionId != null -> interaction = api.interaction(session.token, item.interactionId)
                     item.proposalId != null -> proposal = api.proposals(session.token).firstOrNull { it.id == item.proposalId }
+                    // A decision has no entity to load beside it: the request itself is the entity,
+                    // and it is fetched by id like the other two rather than reconstructed from the
+                    // row, so the person decides on what the server currently says.
+                    item.approvalId != null -> approval = api.approval(session.token, item.approvalId)
                 }
                 error = null
             } catch (e: ApiException) {
@@ -165,6 +172,7 @@ fun ActionRequiredSection(
                 loadingDetail = expandedId == item.id && loadingDetail,
                 interaction = if (expandedId == item.id) interaction else null,
                 proposal = if (expandedId == item.id) proposal else null,
+                approval = if (expandedId == item.id) approval else null,
                 mode = if (expandedId == item.id) expandedMode else null,
                 onAction = { action -> act(item, action) },
                 onAnswer = { answerAction, content ->
@@ -183,6 +191,15 @@ fun ActionRequiredSection(
                     val proposalId = item.proposalId
                     if (proposalId != null) {
                         submit(item) { api.rejectProposal(session.token, proposalId, revision) }
+                    }
+                },
+                onDecideApproval = { decision, comment ->
+                    val approvalId = item.approvalId
+                    if (approvalId != null) {
+                        submit(item) {
+                            if (decision == "approved") api.approveApproval(session.token, approvalId, comment)
+                            else api.rejectApproval(session.token, approvalId, comment ?: "")
+                        }
                     }
                 },
                 onOpenNotify = { expand(item, "notify") },
@@ -207,11 +224,14 @@ internal fun ActionRequiredCard(
     loadingDetail: Boolean = false,
     interaction: InteractionDto? = null,
     proposal: ProposalDto? = null,
+    approval: ApprovalDto? = null,
     mode: String? = null,
     onAction: (InboxActionDto) -> Unit,
     onAnswer: (action: String, content: kotlinx.serialization.json.JsonObject?) -> Unit = { _, _ -> },
     onApprove: (revision: Int, targetBranch: String?, commitMessage: String?) -> Unit = { _, _, _ -> },
     onReject: (revision: Int) -> Unit = {},
+    /** The human gate: `approved`/`rejected` plus the text, which is mandatory for a rejection. */
+    onDecideApproval: (decision: String, comment: String?) -> Unit = { _, _ -> },
     onOpenNotify: (() -> Unit)? = null,
     notifyPanel: (@Composable () -> Unit)? = null,
 ) {
@@ -306,6 +326,13 @@ internal fun ActionRequiredCard(
                     initialMode = mode?.takeIf { it == "approve" || it == "reject" },
                     onApprove = onApprove,
                     onReject = onReject,
+                )
+                approval != null -> ApprovalDecisionSection(
+                    approval = approval,
+                    busy = busy,
+                    initialMode = mode?.takeIf { it == "approve" || it == "reject" },
+                    onApprove = { comment -> onDecideApproval("approved", comment) },
+                    onReject = { comment -> onDecideApproval("rejected", comment) },
                 )
                 else -> Text(
                     text = "Это уже решено — экран сейчас обновится.",

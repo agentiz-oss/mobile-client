@@ -703,6 +703,8 @@ data class InboxItemDto(
     val runId: String? = null,
     val interactionId: String? = null,
     val proposalId: String? = null,
+    /** The decision behind an `approval` row: what `/approvals/:id/approve|reject` is called with. */
+    val approvalId: String? = null,
     val revision: Int? = null,
     val url: String? = null,
     val waitingSince: String? = null,
@@ -720,6 +722,53 @@ data class InboxItemDto(
     val notify: InboxNotifyDto? = null,
     val actions: List<InboxActionDto> = emptyList(),
 )
+
+/**
+ * A decision waiting for this person — the human gate of a workflow (`AgentApprovalRequest`).
+ *
+ * Not a question to an agent and not a diff review: nothing is parked on it, so it may sit for
+ * days, and the two outcomes go to different ports of the graph. The facts about the work are
+ * server-side ([runBranch], [runVerdict]) for the same reason the inbox row's are — three surfaces
+ * must not each spell them their own way — and [links] is whatever the graph's author attached
+ * (a preview stand, a board), which is exactly what the reader is meant to look at before deciding.
+ */
+@Serializable
+data class ApprovalDto(
+    val id: String,
+    val projectId: String = "",
+    val taskId: String? = null,
+    val taskTitle: String? = null,
+    val runId: String? = null,
+    val runStatus: String? = null,
+    val runVerdict: String? = null,
+    val runVerdictReason: String? = null,
+    val runBranch: String? = null,
+    val runCommitSha: String? = null,
+    val runCommitUrl: String? = null,
+    val title: String = "",
+    val message: String? = null,
+    val links: List<ApprovalLinkDto> = emptyList(),
+    val status: String = "pending",
+    val decisionComment: String? = null,
+    val decidedAt: String? = null,
+    val createdAt: String? = null,
+)
+
+@Serializable
+data class ApprovalLinkDto(val label: String = "", val url: String = "")
+
+@Serializable
+data class ApprovalsResponse(val data: List<ApprovalDto> = emptyList())
+
+@Serializable
+data class ApprovalResponse(val data: ApprovalDto? = null)
+
+/**
+ * Body of both decisions. The text is **required** for a rejection — the server answers 400
+ * without it — because it is handed to the agent verbatim as its next instruction.
+ */
+@Serializable
+data class DecideApprovalRequest(val comment: String? = null)
 
 /**
  * The notification state of one row.

@@ -53,6 +53,7 @@ import com.example.app.components.SwipeAction
 import com.example.app.components.SwipeableRow
 import com.example.app.data.AgentizApi
 import com.example.app.data.ApiException
+import com.example.app.data.ApprovalDto
 import com.example.app.data.InboxActionDto
 import com.example.app.data.InboxItemDto
 import com.example.app.data.InteractionDto
@@ -129,6 +130,7 @@ fun InboxScreen(
     var expandedId by remember { mutableStateOf<String?>(null) }
     var expandedInteraction by remember { mutableStateOf<InteractionDto?>(null) }
     var expandedProposal by remember { mutableStateOf<ProposalDto?>(null) }
+    var expandedApproval by remember { mutableStateOf<ApprovalDto?>(null) }
     var expandedMode by remember { mutableStateOf<String?>(null) }
     var expandLoading by remember { mutableStateOf(false) }
     var busyId by remember { mutableStateOf<String?>(null) }
@@ -185,6 +187,7 @@ fun InboxScreen(
         expandedMode = mode
         expandedInteraction = null
         expandedProposal = null
+        expandedApproval = null
         // The notification panel is about the row's *type*, not about the entity behind it —
         // nothing to fetch, and the policy it edits is loaded by the panel itself.
         if (mode == "notify") {
@@ -199,6 +202,10 @@ fun InboxScreen(
                         expandedInteraction = api.interaction(session.token, item.interactionId)
                     item.proposalId != null ->
                         expandedProposal = api.proposals(session.token).firstOrNull { it.id == item.proposalId }
+                    // The decision itself is the entity; fetched by id so the person acts on what
+                    // the server says now, not on what the list said when it was drawn.
+                    item.approvalId != null ->
+                        expandedApproval = api.approval(session.token, item.approvalId)
                 }
                 error = null
             } catch (e: ApiException) {
@@ -368,6 +375,7 @@ fun InboxScreen(
                                         loadingDetail = expandedId == row.id && expandLoading,
                                         interaction = if (expandedId == row.id) expandedInteraction else null,
                                         proposal = if (expandedId == row.id) expandedProposal else null,
+                                        approval = if (expandedId == row.id) expandedApproval else null,
                                         initialMode = if (expandedId == row.id) expandedMode else null,
                                         onAction = { action -> act(row, action) },
                                         // The row itself goes where the thing lives — its run, or its
@@ -398,6 +406,15 @@ fun InboxScreen(
                                             val proposalId = row.proposalId
                                             if (proposalId != null) {
                                                 submit(row) { api.rejectProposal(session.token, proposalId, revision) }
+                                            }
+                                        },
+                                        onDecideApproval = { decision, comment ->
+                                            val approvalId = row.approvalId
+                                            if (approvalId != null) {
+                                                submit(row) {
+                                                    if (decision == "approved") api.approveApproval(session.token, approvalId, comment)
+                                                    else api.rejectApproval(session.token, approvalId, comment ?: "")
+                                                }
                                             }
                                         },
                                         onOpenNotify = { expand(row, "notify") },
@@ -507,12 +524,15 @@ internal fun InboxRow(
     loadingDetail: Boolean = false,
     interaction: InteractionDto? = null,
     proposal: ProposalDto? = null,
+    approval: ApprovalDto? = null,
     initialMode: String? = null,
     onAction: (InboxActionDto) -> Unit,
     onOpen: () -> Unit,
     onAnswer: (action: String, content: JsonObject?) -> Unit = { _, _ -> },
     onApprove: (revision: Int, targetBranch: String?, commitMessage: String?) -> Unit = { _, _, _ -> },
     onReject: (revision: Int) -> Unit = {},
+    /** The human gate: `approved`/`rejected` plus the text, which is mandatory for a rejection. */
+    onDecideApproval: (decision: String, comment: String?) -> Unit = { _, _ -> },
     /** The «пуш …» line's tap: the visible half of the swipe-right gesture. */
     onOpenNotify: (() -> Unit)? = null,
     /** Rendered in place of the entity's form when this row is expanded on its notification rules. */
@@ -687,6 +707,13 @@ internal fun InboxRow(
                         onApprove = onApprove,
                         onReject = onReject,
                     )
+                    approval != null -> ApprovalDecisionSection(
+                        approval = approval,
+                        busy = busy,
+                        initialMode = initialMode?.takeIf { it == "approve" || it == "reject" },
+                        onApprove = { comment -> onDecideApproval("approved", comment) },
+                        onReject = { comment -> onDecideApproval("rejected", comment) },
+                    )
                     // The entity is gone: somebody dealt with it between the list and the tap.
                     else -> Text(
                         text = "Это уже решено — список сейчас обновится.",
@@ -706,6 +733,8 @@ internal fun InboxRow(
 private fun KindIcon(kind: String) {
     when (kind) {
         "question" -> BellIcon(AppTheme.Muted, size = 18.dp)
+        // A decision, not a breakage: the same check the two buttons under it lead to.
+        "approval" -> CheckIcon(AppTheme.Accent, size = 18.dp)
         "push_failed", "reset_failed" -> AlertIcon(AppTheme.Danger, size = 18.dp)
         "review" -> GitPullRequestIcon(AppTheme.Muted, size = 18.dp)
         "run_failed" -> AlertIcon(AppTheme.Danger, size = 18.dp)
@@ -724,6 +753,6 @@ private fun dotColor(kind: String) = when (kind) {
 
 private fun badgeVariant(kind: String) = when (kind) {
     "push_failed", "reset_failed", "run_failed" -> BadgeVariant.Destructive
-    "question", "pr" -> BadgeVariant.Accent
+    "question", "pr", "approval" -> BadgeVariant.Accent
     else -> BadgeVariant.Secondary
 }

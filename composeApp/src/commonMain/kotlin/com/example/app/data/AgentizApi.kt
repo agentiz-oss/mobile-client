@@ -392,6 +392,42 @@ class AgentizApi(baseUrl: String = platformDefaultBaseUrl()) {
             setBody(RejectProposalRequest(revision = revision))
         }.decodeOrThrow<ProposalResponse>().data
 
+    /**
+     * Decisions waiting on this person — the human gate of a workflow.
+     *
+     * Scoped per request on the server, by the token the request itself names: a decision somebody
+     * else has to make is not in this list, and asking for it by id answers **404**, never 403.
+     */
+    suspend fun approvals(token: String): List<ApprovalDto> =
+        client.get("$root/approvals") {
+            bearerAuth(token)
+        }.decodeOrThrow<ApprovalsResponse>().data
+
+    suspend fun approval(token: String, approvalId: String): ApprovalDto? =
+        client.get("$root/approvals/$approvalId") {
+            bearerAuth(token)
+        }.decodeOrThrow<ApprovalResponse>().data
+
+    /** Accepts the work: the flow continues down the `approved` port. A comment is optional here. */
+    suspend fun approveApproval(token: String, approvalId: String, comment: String? = null): ApprovalDto? =
+        client.post("$root/approvals/$approvalId/approve") {
+            bearerAuth(token)
+            contentType(ContentType.Application.Json)
+            setBody(DecideApprovalRequest(comment = comment))
+        }.decodeOrThrow<ApprovalResponse>().data
+
+    /**
+     * Sends the work back. The text is **required** and the server refuses a rejection without one
+     * (HTTP 400): it reaches the agent as its next instruction, and "отклонено" with no reason
+     * sends it to redo the task from scratch.
+     */
+    suspend fun rejectApproval(token: String, approvalId: String, comment: String): ApprovalDto? =
+        client.post("$root/approvals/$approvalId/reject") {
+            bearerAuth(token)
+            contentType(ContentType.Application.Json)
+            setBody(DecideApprovalRequest(comment = comment))
+        }.decodeOrThrow<ApprovalResponse>().data
+
     /** The notification policy, cut down to the caller's projects and their pipelines. */
     suspend fun notificationPolicy(token: String): NotificationPolicyDto =
         client.get("$root/notification-policy") {
