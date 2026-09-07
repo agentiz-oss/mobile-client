@@ -87,6 +87,9 @@ fun WorkersScreen(
     var error by remember { mutableStateOf<String?>(null) }
     var reloadKey by remember { mutableStateOf(0) }
     var refreshing by remember { mutableStateOf(false) }
+    // Old, paused and disconnected records are valuable for diagnosis but should not hide the
+    // machines that can actually claim work. A person can still reveal the whole fleet in one tap.
+    var showInactiveWorkers by remember { mutableStateOf(false) }
 
     // Both lists are loaded together, whichever tab is open: switching tabs is then instant, and the
     // counts in the tab strip are true for the tab the user is *not* on — which is the whole point
@@ -162,12 +165,26 @@ fun WorkersScreen(
 
                     when (tab) {
                         CapacityTab.Workers -> {
-                            if (currentWorkers!!.isEmpty()) {
-                                item(key = "workers-empty") {
-                                    EmptyNote("Ни один воркер не зарегистрирован.")
+                            val inactive = currentWorkers!!.filter(::isInactiveWorker)
+                            val visible = if (showInactiveWorkers) currentWorkers!! else currentWorkers!!.filterNot(::isInactiveWorker)
+                            if (inactive.isNotEmpty()) {
+                                item(key = "inactive-toggle") {
+                                    InactiveWorkersToggle(
+                                        count = inactive.size,
+                                        expanded = showInactiveWorkers,
+                                        onClick = { showInactiveWorkers = !showInactiveWorkers },
+                                    )
                                 }
                             }
-                            items(currentWorkers, key = { it.id }) { worker -> WorkerCard(worker) }
+                            if (visible.isEmpty()) {
+                                item(key = "workers-empty") {
+                                    EmptyNote(
+                                        if (currentWorkers!!.isEmpty()) "Ни один воркер не зарегистрирован."
+                                        else "Нет воркеров, которые сейчас могут принять работу.",
+                                    )
+                                }
+                            }
+                            items(visible, key = { it.id }) { worker -> WorkerCard(worker) }
                         }
 
                         CapacityTab.Subscriptions -> {
@@ -339,6 +356,8 @@ private fun HarnessBlock(harness: WorkerHarnessDto) {
 
         WindowList(harness.windows, observedAt = harness.observedAt)
 
+        SubscriptionIdleNote(subscription?.lastLimitChangeAt)
+
         subscription?.exhaustedUntil?.let { until ->
             Spacer(Modifier.height(10.dp))
             ExhaustedNote(until = until, reason = subscription.exhaustedReason)
@@ -396,6 +415,8 @@ private fun SubscriptionCard(subscription: HarnessSubscriptionDto) {
         }
 
         WindowList(subscription.windows, observedAt = subscription.lastSignalAt)
+
+        SubscriptionIdleNote(subscription.lastLimitChangeAt)
 
         subscription.exhaustedUntil?.let { until ->
             Spacer(Modifier.height(10.dp))
@@ -545,6 +566,34 @@ private fun usageColor(percent: Double) = when {
     percent >= 70.0 -> AppTheme.Warning
     else -> AppTheme.Primary
 }
+
+/** The user-facing idle clock is based on quota changes, never on the report freshness timestamp. */
+@Composable
+private fun SubscriptionIdleNote(lastLimitChangeAt: String?) {
+    if (lastLimitChangeAt == null) return
+    val idle = formatWaiting(lastLimitChangeAt) ?: "только что"
+    Spacer(Modifier.height(8.dp))
+    Text(text = "Лимиты без изменений $idle", style = AppTheme.Label, color = AppTheme.Muted)
+}
+
+@Composable
+private fun InactiveWorkersToggle(count: Int, expanded: Boolean, onClick: () -> Unit) {
+    Text(
+        text = if (expanded) "Скрыть неактивные ($count)" else "Показать неактивные ($count)",
+        style = AppTheme.Label,
+        color = AppTheme.Foreground,
+        modifier = Modifier
+            .fillMaxWidth()
+            .clip(RoundedCornerShape(AppTheme.Radius))
+            .border(1.dp, AppTheme.Border, RoundedCornerShape(AppTheme.Radius))
+            .clickable(role = Role.Button, onClick = onClick)
+            .padding(14.dp),
+    )
+}
+
+/** Only active workers that are currently talking to the server belong in the default fleet view. */
+internal fun isInactiveWorker(worker: WorkerDto): Boolean =
+    worker.status != "active" || worker.contactState != "online"
 
 @Composable
 private fun ExhaustedNote(until: String, reason: String?) {

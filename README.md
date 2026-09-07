@@ -5,7 +5,8 @@ codebase renders the same UI on **web (Wasm)**, **desktop (JVM)**, **Android** a
 
 What the app does: sign in against the Agentiz mobile API, browse your projects, open a project's
 tasks, create a task, run or stop its pipeline, browse the history of all runs with their results
-and execution logs, answer questions an agent asks mid-run, and read the discussion thread.
+and execution logs, answer questions an agent asks mid-run, inspect workers and subscription limits,
+and read the discussion thread.
 
 ---
 

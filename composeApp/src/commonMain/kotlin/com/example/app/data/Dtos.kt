@@ -503,6 +503,8 @@ data class HarnessSubscriptionRefDto(
     val exhausted: Boolean = false,
     val exhaustedUntil: String? = null,
     val exhaustedReason: String? = null,
+    /** Moment quota values last changed; identical telemetry heartbeats do not move it. */
+    val lastLimitChangeAt: String? = null,
 )
 
 /**
@@ -572,6 +574,8 @@ data class HarnessSubscriptionDto(
     val exhaustedReason: String? = null,
     val lastSignalAt: String? = null,
     val lastSignalSource: String? = null,
+    /** Moment quota values last changed; used for the subscription idle indicator. */
+    val lastLimitChangeAt: String? = null,
     val windows: List<HarnessWindowDto> = emptyList(),
     val workers: List<SubscriptionWorkerDto> = emptyList(),
 )
