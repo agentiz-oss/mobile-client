@@ -123,14 +123,14 @@ class TimeFormatTest {
         // Six days and change: 148 h left, of which 29 whole five-hour windows.
         assertEquals(
             "29 полных 5-часовых окон",
-            formatFullSessionWindows(isoAt(now + 148 * 3_600_000L), nowEpochMillis = now),
+            formatFullSessionWindows(isoAt(now + 148 * 3_600_000L), 300L, nowEpochMillis = now),
         )
     }
 
     @Test
     fun `the count agrees with its number`() {
         val now = 1_770_000_000_000L
-        fun after(hours: Long) = formatFullSessionWindows(isoAt(now + hours * 3_600_000L), nowEpochMillis = now)
+        fun after(hours: Long) = formatFullSessionWindows(isoAt(now + hours * 3_600_000L), 300L, nowEpochMillis = now)
         assertEquals("1 полное 5-часовое окно", after(6))    // 1
         assertEquals("2 полных 5-часовых окна", after(11))   // 2
         assertEquals("5 полных 5-часовых окон", after(26))   // 5
@@ -142,17 +142,35 @@ class TimeFormatTest {
     fun `a session window carries no count of itself`() {
         val now = 1_770_000_000_000L
         // Exactly one window left, and anything shorter: the row is the session window itself.
-        assertNull(formatFullSessionWindows(isoAt(now + 5 * 3_600_000L), nowEpochMillis = now))
-        assertNull(formatFullSessionWindows(isoAt(now + 90 * 60_000L), nowEpochMillis = now))
+        assertNull(formatFullSessionWindows(isoAt(now + 5 * 3_600_000L), 300L, nowEpochMillis = now))
+        assertNull(formatFullSessionWindows(isoAt(now + 90 * 60_000L), 300L, nowEpochMillis = now))
     }
 
     @Test
     fun `no count for a window that has no reset or has passed`() {
         val now = 1_770_000_000_000L
-        assertNull(formatFullSessionWindows(null, nowEpochMillis = now))
-        assertNull(formatFullSessionWindows("", nowEpochMillis = now))
-        assertNull(formatFullSessionWindows("not-a-date", nowEpochMillis = now))
-        assertNull(formatFullSessionWindows(isoAt(now - 3_600_000L), nowEpochMillis = now))
+        assertNull(formatFullSessionWindows(null, 300L, nowEpochMillis = now))
+        assertNull(formatFullSessionWindows("", 300L, nowEpochMillis = now))
+        assertNull(formatFullSessionWindows("not-a-date", 300L, nowEpochMillis = now))
+        assertNull(formatFullSessionWindows(isoAt(now - 3_600_000L), 300L, nowEpochMillis = now))
+    }
+
+    @Test
+    fun `a plan without a session window counts nothing`() {
+        val now = 1_770_000_000_000L
+        // Codex: the server sends no session length, so a week-long bucket says only how long is
+        // left, never «ещё N полных 5-часовых окон» — that unit does not exist on this plan.
+        assertNull(formatFullSessionWindows(isoAt(now + 148 * 3_600_000L), null, nowEpochMillis = now))
+        assertNull(formatFullSessionWindows(isoAt(now + 148 * 3_600_000L), 0L, nowEpochMillis = now))
+    }
+
+    @Test
+    fun `a session window of another length names its own hours`() {
+        val now = 1_770_000_000_000L
+        assertEquals(
+            "24 полных 3-часовых окна",
+            formatFullSessionWindows(isoAt(now + 74 * 3_600_000L), 180L, nowEpochMillis = now),
+        )
     }
 
     /** Renders an epoch instant as the ISO-8601 UTC string the server would send. */

@@ -186,35 +186,47 @@ internal fun formatWaiting(
     }
 }
 
-/** Length of a harness session window, mirroring `SESSION_WINDOW_MS` in `lib/harnessAlign.ts`. */
-private const val SESSION_WINDOW_MINUTES = 300L
-
 /**
  * `30 полных 5-часовых окон` — how many whole session windows still fit before a long limit window
  * resets. This is the only thing a weekly figure is actually used for: «осталось 154 ч 12 мин» is
  * a number nobody can plan against, and the count of sessions left in it is.
  *
- * Null for a window whose reset is no further out than one session length, which is how the server
- * decides the same question (`sessionWindowOpen` in `lib/harnessAlign.ts` recognizes a session
- * window structurally, by its reset landing within W, rather than by a provider's key). So the
- * 5-hour row never carries a count of itself, and a weekly row down to its last session says
+ * The window's length is the *plan's*, so it is asked for rather than assumed: the server sends it
+ * per window (`sessionWindowMinutes`) and a plan with no session window — Codex bills by its own
+ * buckets — sends none, which is null here and means «показывай только дату и часы с минутами».
+ * An older server sends it for nothing at all, so the count simply disappears until it is updated:
+ * a missing hint reads as an unknown unit, never as a five-hour one somebody else's plan may lack.
+ *
+ * Null too for a window whose reset is no further out than one session length, which is how the
+ * server decides the same question (`sessionWindowOpen` in `lib/harnessAlign.ts` recognizes a
+ * session window structurally, by its reset landing within W, rather than by a provider's key). So
+ * the 5-hour row never carries a count of itself, and a weekly row down to its last session says
  * nothing instead of «1 окно» — the plain hours read fine at that scale.
  */
 @OptIn(ExperimentalTime::class)
 internal fun formatFullSessionWindows(
     untilIso: String?,
+    sessionWindowMinutes: Long?,
     nowEpochMillis: Long = Clock.System.now().toEpochMilliseconds(),
 ): String? {
+    val windowMinutes = sessionWindowMinutes?.takeIf { it > 0L } ?: return null
     val left = remainingMinutes(untilIso, nowEpochMillis) ?: return null
-    if (left <= SESSION_WINDOW_MINUTES) return null
-    val windows = left / SESSION_WINDOW_MINUTES
-    return "$windows ${sessionWindowsNoun(windows)}"
+    if (left <= windowMinutes) return null
+    val windows = left / windowMinutes
+    return "$windows ${sessionWindowsNoun(windows, windowMinutes)}"
 }
 
-/** Russian count agreement: 1 окно, 2–4 окна, 5+ окон — and 11–14 back to окон. */
-private fun sessionWindowsNoun(count: Long): String = when {
-    count % 100L in 11L..14L -> "полных 5-часовых окон"
-    count % 10L == 1L -> "полное 5-часовое окно"
-    count % 10L in 2L..4L -> "полных 5-часовых окна"
-    else -> "полных 5-часовых окон"
+/**
+ * Russian count agreement: 1 окно, 2–4 окна, 5+ окон — and 11–14 back to окон. The window's own
+ * length is part of the phrase («5-часовых»), so a plan whose session is not five hours long reads
+ * correctly without a second wording.
+ */
+private fun sessionWindowsNoun(count: Long, windowMinutes: Long): String {
+    val unit = if (windowMinutes % 60L == 0L) "${windowMinutes / 60L}-часов" else "${windowMinutes}-минутн"
+    return when {
+        count % 100L in 11L..14L -> "полных ${unit}ых окон"
+        count % 10L == 1L -> "полное ${unit}ое окно"
+        count % 10L in 2L..4L -> "полных ${unit}ых окна"
+        else -> "полных ${unit}ых окон"
+    }
 }

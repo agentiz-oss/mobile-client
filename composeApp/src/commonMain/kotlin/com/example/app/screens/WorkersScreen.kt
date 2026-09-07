@@ -26,6 +26,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
@@ -43,6 +44,7 @@ import com.example.app.data.WorkerDto
 import com.example.app.data.WorkerHarnessDto
 import com.example.app.theme.AppTheme
 import kotlinx.coroutines.delay
+import kotlin.math.roundToInt
 
 /**
  * How often the page re-reads. Usage is reported by each worker every 120 s, so anything faster
@@ -491,10 +493,20 @@ private fun WindowList(windows: List<HarnessWindowDto>, observedAt: String?) {
     }
 }
 
-/** One window as a labelled bar. A window without a percentage still shows its reset time. */
+/**
+ * One window as a labelled bar. A window without a percentage still shows its reset time.
+ *
+ * Which half of the quota the number states is the provider's decision and arrives with the window
+ * (`meter`): Claude reports «израсходовано», Codex «осталось». The bar always fills with the number
+ * printed beside it, while the colour follows the *spent* share either way — a nearly empty
+ * "осталось" bar has to read as the alarming one.
+ */
 @Composable
 private fun WindowRow(window: HarnessWindowDto) {
-    val percent = window.usedPercent?.coerceIn(0.0, 100.0)
+    val used = window.usedPercent?.coerceIn(0.0, 100.0)
+    val remaining = window.meter == "remaining"
+    // Rounded once, so the bar and the number beside it cannot disagree.
+    val shown = used?.let { (if (remaining) 100.0 - it else it).roundToInt() }
     Column(modifier = Modifier.fillMaxWidth()) {
         Row(
             modifier = Modifier.fillMaxWidth(),
@@ -510,14 +522,14 @@ private fun WindowRow(window: HarnessWindowDto) {
                 modifier = Modifier.weight(1f).padding(end = 12.dp),
             )
             Text(
-                text = percent?.let { "${it.toInt()}%" } ?: "нет данных",
+                text = shown?.let { if (remaining) "осталось $it%" else "$it%" } ?: "нет данных",
                 style = AppTheme.Label,
-                color = if (percent == null) AppTheme.Muted else usageColor(percent),
+                color = if (used == null) AppTheme.Muted else usageColor(used),
             )
         }
-        if (percent != null) {
+        if (used != null && shown != null) {
             Spacer(Modifier.height(6.dp))
-            UsageBar(percent)
+            UsageBar(shown.toDouble(), usageColor(used))
         }
         window.resetsAt?.let { resetsAt ->
             formatTimestamp(resetsAt)?.let { at ->
@@ -525,9 +537,10 @@ private fun WindowRow(window: HarnessWindowDto) {
                 // A long window — the weekly one in practice — also says how many whole session
                 // windows are left in it: «осталось 154 ч 12 мин» is not a number anyone can plan
                 // against, and the sessions left in it is what that figure gets read for.
-                val left = formatRemaining(resetsAt)?.let { remaining ->
-                    val sessions = formatFullSessionWindows(resetsAt)?.let { ", ещё $it" } ?: ""
-                    " (осталось $remaining$sessions)"
+                val left = formatRemaining(resetsAt)?.let { until ->
+                    val sessions = formatFullSessionWindows(resetsAt, window.sessionWindowMinutes)
+                        ?.let { ", ещё $it" } ?: ""
+                    " (осталось $until$sessions)"
                 } ?: ""
                 Text(text = "Обновится $at$left", style = AppTheme.Label, color = AppTheme.Muted)
             }
@@ -535,9 +548,9 @@ private fun WindowRow(window: HarnessWindowDto) {
     }
 }
 
-/** The bar itself: a full-width track with the used fraction drawn over it. */
+/** The bar itself: a full-width track with the shown fraction drawn over it, in the given colour. */
 @Composable
-private fun UsageBar(percent: Double) {
+private fun UsageBar(percent: Double, color: Color) {
     Box(
         modifier = Modifier
             .fillMaxWidth()
@@ -551,7 +564,7 @@ private fun UsageBar(percent: Double) {
             modifier = Modifier
                 .fillMaxWidth((percent / 100.0).toFloat().coerceIn(0f, 1f))
                 .height(6.dp)
-                .background(usageColor(percent), RoundedCornerShape(999.dp)),
+                .background(color, RoundedCornerShape(999.dp)),
         )
     }
 }

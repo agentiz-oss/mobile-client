@@ -487,8 +487,21 @@ data class CreateCommentRequest(
 data class HarnessWindowDto(
     val key: String = "",
     val label: String? = null,
+    /** Always the *spent* share of the window; `meter` decides which half of it is shown. */
     val usedPercent: Double? = null,
     val resetsAt: String? = null,
+    /**
+     * How the provider's own console states this number: `"used"` (the default, and what an older
+     * server sends nothing for) or `"remaining"`, which Codex uses — the screen then shows
+     * `100 − usedPercent` as «осталось N%». The app never derives this from the harness key.
+     */
+    val meter: String = "used",
+    /**
+     * Length of the plan's session window in minutes, when it has one (Claude: 300). Null — Codex,
+     * or a server older than the field — means the reset time may be shown only as a date and the
+     * hours and minutes left, with no count of session windows the plan may not have.
+     */
+    val sessionWindowMinutes: Long? = null,
     val observedAt: String? = null,
     val source: String? = null,
 )
