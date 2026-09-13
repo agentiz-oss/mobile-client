@@ -235,7 +235,8 @@ internal fun ActionRequiredCard(
     onOpenNotify: (() -> Unit)? = null,
     notifyPanel: (@Composable () -> Unit)? = null,
 ) {
-    val broken = item.kind == "push_failed" || item.kind == "reset_failed" || item.kind == "run_failed"
+    val broken = item.kind == "push_failed" || item.kind == "reset_failed" || item.kind == "run_failed" ||
+        item.kind == "harness_auth"
     Column(
         modifier = Modifier
             .fillMaxWidth()

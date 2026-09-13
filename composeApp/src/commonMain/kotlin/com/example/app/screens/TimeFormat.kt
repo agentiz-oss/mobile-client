@@ -83,6 +83,21 @@ private fun two(value: Int): String = value.toString().padStart(2, '0')
  * answers null for a parseable input: a string carrying a date but no readable time falls through
  * to [fallbackTimestamp] and keeps its UTC digits, as it always did.
  */
+/**
+ * Russian counting, three forms picked by the last digits: 1 (but not 11), 2–4 (but not 12–14),
+ * everything else. Lives here with the other display helpers because «2 воркеров без входа» in a
+ * line somebody reads before going to fix something reads as a machine talking.
+ */
+internal fun plural(count: Int, one: String, few: String, many: String): String {
+    val mod100 = count % 100
+    if (mod100 in 11..14) return many
+    return when (mod100 % 10) {
+        1 -> one
+        2, 3, 4 -> few
+        else -> many
+    }
+}
+
 internal fun formatTimestamp(iso: String?): String? {
     if (iso.isNullOrBlank()) return null
     val minutes = epochMinutes(iso) ?: return fallbackTimestamp(iso)

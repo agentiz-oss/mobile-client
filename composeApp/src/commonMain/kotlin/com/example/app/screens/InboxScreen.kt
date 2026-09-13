@@ -47,6 +47,7 @@ import com.example.app.components.DotFillIcon
 import com.example.app.components.GitBranchIcon
 import com.example.app.components.GitPullRequestIcon
 import com.example.app.components.IssueOpenedIcon
+import com.example.app.components.KeyIcon
 import com.example.app.components.MenuEntry
 import com.example.app.components.PullToRefresh
 import com.example.app.components.SwipeAction
@@ -735,6 +736,9 @@ private fun KindIcon(kind: String) {
         "question" -> BellIcon(AppTheme.Muted, size = 18.dp)
         // A decision, not a breakage: the same check the two buttons under it lead to.
         "approval" -> CheckIcon(AppTheme.Accent, size = 18.dp)
+        // The only row with no button of its own: it is fixed in a browser on the worker machine,
+        // so it is marked as what it needs rather than as another generic failure.
+        "harness_auth" -> KeyIcon(AppTheme.Danger, size = 18.dp)
         "push_failed", "reset_failed" -> AlertIcon(AppTheme.Danger, size = 18.dp)
         "review" -> GitPullRequestIcon(AppTheme.Muted, size = 18.dp)
         "run_failed" -> AlertIcon(AppTheme.Danger, size = 18.dp)
@@ -747,12 +751,12 @@ private fun KindIcon(kind: String) {
 
 /** Blue for "somebody has to look", red for "something is broken" — the same split as the glyph. */
 private fun dotColor(kind: String) = when (kind) {
-    "push_failed", "reset_failed", "run_failed" -> AppTheme.Danger
+    "push_failed", "reset_failed", "run_failed", "harness_auth" -> AppTheme.Danger
     else -> AppTheme.Accent
 }
 
 private fun badgeVariant(kind: String) = when (kind) {
-    "push_failed", "reset_failed", "run_failed" -> BadgeVariant.Destructive
+    "push_failed", "reset_failed", "run_failed", "harness_auth" -> BadgeVariant.Destructive
     "question", "pr", "approval" -> BadgeVariant.Accent
     else -> BadgeVariant.Secondary
 }

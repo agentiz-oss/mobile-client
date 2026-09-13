@@ -352,6 +352,25 @@ fun IssueOpenedIcon(tint: Color, size: Dp = IconSize) {
     }
 }
 
+/**
+ * Octicons' `key`: a bow with a hole, a shaft running down-right and two teeth.
+ *
+ * Drawn on the diagonal rather than flat, because at list-row size a horizontal key is a short
+ * bar with bumps and reads as nothing in particular; the diagonal is what makes the silhouette
+ * recognisable next to a bell and an alert circle.
+ */
+@Composable
+fun KeyIcon(tint: Color, size: Dp = IconSize) {
+    Icon(size) { s ->
+        circle(s, tint, 0.33f, 0.33f, 0.19f)
+        line(s, tint, 0.47f, 0.47f, 0.84f, 0.84f)
+        // Two teeth, perpendicular to the shaft and both on the same side — a key with symmetric
+        // bumps reads as an arrow.
+        line(s, tint, 0.67f, 0.67f, 0.57f, 0.77f)
+        line(s, tint, 0.79f, 0.79f, 0.69f, 0.89f)
+    }
+}
+
 /** Octicons' `git-branch`: a trunk of two commits with one branch hanging off to the side. */
 @Composable
 fun GitBranchIcon(tint: Color, size: Dp = IconSize) {

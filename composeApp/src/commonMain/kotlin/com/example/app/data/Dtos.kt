@@ -522,8 +522,8 @@ data class HarnessSubscriptionRefDto(
 
 /**
  * One harness available on one worker. [state] is decided by the server (`available`, `exhausted`,
- * `disabled`) and is the only thing the UI colours by — "исчерпан" is a gate the server closed, not
- * something re-derived here out of the percentages.
+ * `unauthorized`, `disabled`) and is the only thing the UI colours by — "исчерпан" is a gate the
+ * server closed, not something re-derived here out of the percentages.
  */
 @Serializable
 data class WorkerHarnessDto(
@@ -531,6 +531,18 @@ data class WorkerHarnessDto(
     val harnessKey: String,
     val enabled: Boolean = true,
     val state: String = "available",
+    /**
+     * Whether *this machine* can authenticate to the harness at all: `"expired"` means nobody is
+     * logged in there any more and the queue for it has stopped. Deliberately separate from the
+     * subscription's limit below — a quota belongs to the account and ends by itself, a credential
+     * lives on one machine and ends only when a person opens a browser on it. Null: an older
+     * server, or a worker that has never reported one.
+     */
+    val authState: String? = null,
+    /** The worker's own one-line diagnosis («refresh token expired»), when it sent one. */
+    val authDetail: String? = null,
+    /** Start of the outage, so the screen says "с 12.09 20:04" rather than "сейчас". */
+    val authFailedSince: String? = null,
     val maxConcurrent: Int? = null,
     val runningJobs: Int = 0,
     val queuedJobs: Int = 0,
@@ -567,6 +579,12 @@ data class SubscriptionWorkerDto(
     val enabled: Boolean = true,
     val contactState: String = "never_contacted",
     val runningJobs: Int = 0,
+    /**
+     * Whether this particular machine can log in — see [WorkerHarnessDto.authState]. It belongs on
+     * the *row* and not on the card: one machine of a shared account can be logged out while its
+     * siblings keep spending the same subscription.
+     */
+    val authState: String? = null,
 )
 
 /**
@@ -690,7 +708,27 @@ data class ActivitySummaryDto(
     /** How many rows this reader has hidden — the "Скрытые (N)" switch, and nothing else. */
     val dismissedCount: Int = 0,
     val unseen: Int = 0,
+    /**
+     * Machines that need a person, riding the request the app already polls for its badge.
+     *
+     * Not part of [items] and not counted in [actionableCount]: those are things waiting on *this*
+     * reader inside a project, while this is the installation's plumbing. It is here so the phone
+     * can notice a stopped queue without anybody opening the workers screen — which is precisely
+     * how a logged-out worker used to go unnoticed for a day.
+     */
+    val workerAlerts: WorkerAlertsDto = WorkerAlertsDto(),
 )
+
+/** Worker trouble worth a badge. Only `active` machines count — a paused one is somebody's choice. */
+@Serializable
+data class WorkerAlertsDto(
+    /** Harnesses whose machine cannot authenticate: the queue for them has stopped until a login. */
+    val needLogin: Int = 0,
+    /** Machines that should be polling for work and are not. */
+    val offline: Int = 0,
+) {
+    val total: Int get() = needLogin + offline
+}
 
 /**
  * One thing that needs a person. The server decides what it is called ([badge]), what it says

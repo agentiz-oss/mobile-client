@@ -314,6 +314,9 @@ fun App() {
     }
     // Everything waiting, not only questions: the drawer's one entry now stands for all of it.
     val actionable = summary.actionableCount
+    // Machines that need a person — logged out, or no longer answering. Rides the same summary, so
+    // the drawer can say it without a request of its own.
+    val workerAlerts = summary.workerAlerts.total
 
     /**
      * The drawer's contents. Built here rather than inside each screen because the menu is about
@@ -358,9 +361,14 @@ fun App() {
         )
         add(
             MenuEntry(
-                label = "Воркеры",
+                // A worker that cannot log in or has stopped answering takes the whole queue down
+                // with it, and until it is named here the only way to find out is to open the
+                // screen and scroll. Counted apart from «Входящие»: that number is what waits on
+                // *this* person inside a project, this one is the installation's plumbing.
+                label = if (workerAlerts > 0) "Воркеры ($workerAlerts)" else "Воркеры",
                 onClick = { go(Destination.Workers(destination)) },
                 enabled = destination !is Destination.Workers,
+                danger = workerAlerts > 0,
             ),
         )
         add(

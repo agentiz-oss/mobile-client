@@ -32,6 +32,7 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import com.composeunstyled.Text
 import com.example.app.components.AppScaffold
+import com.example.app.components.KeyIcon
 import com.example.app.components.MenuEntry
 import com.example.app.components.PullToRefresh
 import com.example.app.data.AgentizApi
@@ -125,10 +126,12 @@ fun WorkersScreen(
 
     AppScaffold(
         title = "Воркеры",
-        subtitle = currentSubscriptions
-            ?.count { it.exhausted }
-            ?.takeIf { it > 0 }
-            ?.let { "$it подписка исчерпана" },
+        // What is wrong, in one line, with the thing a person can actually act on first: a login is
+        // theirs to fix, an exhausted quota fixes itself.
+        subtitle = listOfNotNull(
+            currentWorkers?.count { it.needsLogin }?.takeIf { it > 0 }?.let { "$it ${plural(it, "воркер", "воркера", "воркеров")} без входа" },
+            currentSubscriptions?.count { it.exhausted }?.takeIf { it > 0 }?.let { "$it подписка исчерпана" },
+        ).takeIf { it.isNotEmpty() }?.joinToString(" · "),
         menu = menu,
         onOpenSettings = onOpenSettings,
         onOpenProfile = onOpenProfile,
@@ -167,8 +170,16 @@ fun WorkersScreen(
 
                     when (tab) {
                         CapacityTab.Workers -> {
-                            val inactive = currentWorkers!!.filter(::isInactiveWorker)
-                            val visible = if (showInactiveWorkers) currentWorkers!! else currentWorkers!!.filterNot(::isInactiveWorker)
+                            // "Inactive" means nobody expects work from it — paused, revoked, never
+                            // connected. A machine that is *supposed* to be working and is not is
+                            // the opposite of that and is promoted into the default list: hiding it
+                            // behind a toggle is how a broken fleet looks like an empty one.
+                            val hidden = currentWorkers!!.filter { isInactiveWorker(it) && !isBrokenWorker(it) }
+                            val visible = (if (showInactiveWorkers) currentWorkers!! else currentWorkers!! - hidden.toSet())
+                                // Broken first: the list is otherwise alphabetical, and the one row
+                                // a person opened this screen for must not be the last one.
+                                .sortedBy { !isBrokenWorker(it) }
+                            val inactive = hidden
                             if (inactive.isNotEmpty()) {
                                 item(key = "inactive-toggle") {
                                     InactiveWorkersToggle(
@@ -271,7 +282,14 @@ private fun WorkerCard(worker: WorkerDto) {
                 overflow = TextOverflow.Ellipsis,
                 modifier = Modifier.weight(1f).padding(end = 12.dp),
             )
-            ContactBadge(worker.contactState, worker.status)
+            Row(horizontalArrangement = Arrangement.spacedBy(6.dp), verticalAlignment = Alignment.CenterVertically) {
+                // A machine can be perfectly reachable and still unable to do any work, and the
+                // card is tall enough that the harness block saying so is below the fold. Without
+                // this the header reads "на связи" and nothing else — which is exactly how a
+                // logged-out worker looked healthy for a day.
+                if (worker.needsLogin) Badge("нужен вход", AppTheme.Danger)
+                ContactBadge(worker.contactState, worker.status)
+            }
         }
 
         val meta = listOfNotNull(
@@ -355,6 +373,8 @@ private fun HarnessBlock(harness: WorkerHarnessDto) {
             Spacer(Modifier.height(4.dp))
             Text(text = jobs.joinToString(" · "), style = AppTheme.Label, color = AppTheme.Muted)
         }
+
+        if (harness.authState == "expired") NeedsLoginNote(harness)
 
         WindowList(harness.windows, observedAt = harness.observedAt)
 
@@ -460,11 +480,14 @@ private fun SubscriptionWorkerRow(worker: SubscriptionWorkerDto) {
         )
         Text(
             text = listOfNotNull(
+                // First and in red: from the subscription's side this is the machine that stopped
+                // spending it, and "на связи" alone would say the opposite.
+                "нужен вход".takeIf { worker.authState == "expired" },
                 contactLabel(worker.contactState),
                 "идёт ${worker.runningJobs}".takeIf { worker.runningJobs > 0 },
             ).joinToString(" · "),
             style = AppTheme.Label,
-            color = AppTheme.Muted,
+            color = if (worker.authState == "expired") AppTheme.Danger else AppTheme.Muted,
         )
     }
 }
@@ -608,6 +631,27 @@ private fun InactiveWorkersToggle(count: Int, expanded: Boolean, onClick: () -> 
 internal fun isInactiveWorker(worker: WorkerDto): Boolean =
     worker.status != "active" || worker.contactState != "online"
 
+/**
+ * "Эта машина ни одной задачи этого типа сейчас не возьмёт" — any harness on it is logged out.
+ *
+ * Read from the server's own per-harness state rather than re-derived from percentages or from the
+ * contact state: a logged-out worker keeps polling and keeps looking alive, which is the whole
+ * reason this is a separate thing to show.
+ */
+internal val WorkerDto.needsLogin: Boolean
+    get() = harnesses.any { it.authState == "expired" }
+
+/**
+ * A machine somebody has to look at: it is switched on for work and either cannot log in or has
+ * stopped answering at all. These are the two states the drawer counts, so what the badge says and
+ * what this screen shows cannot come apart.
+ *
+ * `never_contacted` is deliberately not one of them — a worker that has never connected is an
+ * unfinished setup, not a breakage.
+ */
+internal fun isBrokenWorker(worker: WorkerDto): Boolean =
+    worker.status == "active" && (worker.contactState == "offline" || worker.needsLogin)
+
 @Composable
 private fun ExhaustedNote(until: String, reason: String?) {
     Text(
@@ -623,16 +667,66 @@ private fun ExhaustedNote(until: String, reason: String?) {
     )
 }
 
-/** `available` / `exhausted` / `disabled`, exactly as the server decided it. */
+/** `available` / `exhausted` / `unauthorized` / `disabled`, exactly as the server decided it. */
 @Composable
 private fun HarnessStateBadge(state: String) {
     val (label, color) = when (state) {
         "available" -> "доступен" to AppTheme.Primary
         "exhausted" -> "лимит исчерпан" to AppTheme.Danger
+        // Not a limit: nothing here ends on a clock, which is why it is worded as a demand and not
+        // as a state («нужен вход», not «нет авторизации»).
+        "unauthorized" -> "нужен вход" to AppTheme.Danger
         "disabled" -> "выключен" to AppTheme.Disabled
         else -> state to AppTheme.Muted
     }
     Badge(label, color)
+}
+
+/**
+ * What to do about a machine nobody is logged into any more — the one state on this screen that
+ * cannot be fixed from the phone, and therefore the one that has to say where it *can* be fixed.
+ *
+ * Sits above the limit bars rather than below them: with no credential the numbers next to it are
+ * frozen at whatever the last working report said, and reading them as current is exactly the
+ * mistake that made this outage take a day to spot.
+ */
+@Composable
+private fun NeedsLoginNote(harness: WorkerHarnessDto) {
+    val since = formatTimestamp(harness.authFailedSince)
+    Spacer(Modifier.height(12.dp))
+    Column(
+        modifier = Modifier
+            .fillMaxWidth()
+            .clip(RoundedCornerShape(AppTheme.Radius))
+            .background(AppTheme.DangerSubtle, RoundedCornerShape(AppTheme.Radius))
+            .padding(12.dp),
+    ) {
+        Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            KeyIcon(AppTheme.Danger, size = 16.dp)
+            Text(
+                text = since?.let { "Вход закончился $it" } ?: "Вход закончился",
+                style = AppTheme.Body,
+                color = AppTheme.Danger,
+            )
+        }
+        harness.authDetail?.takeIf { it.isNotBlank() }?.let { detail ->
+            Spacer(Modifier.height(4.dp))
+            Text(text = detail, style = AppTheme.Label, color = AppTheme.Muted)
+        }
+        Spacer(Modifier.height(6.dp))
+        Text(
+            text = "Продлить подписку и войти заново можно только в браузере на самой машине воркера" +
+                if (harness.harnessKey == "claude") " — «claude auth login» под тем пользователем, от которого он работает." else ".",
+            style = AppTheme.Label,
+            color = AppTheme.Foreground,
+        )
+        Spacer(Modifier.height(4.dp))
+        Text(
+            text = "Задачи этого харнесса стоят в очереди и продолжатся сами через пару минут после входа.",
+            style = AppTheme.Label,
+            color = AppTheme.Muted,
+        )
+    }
 }
 
 /**
@@ -653,7 +747,14 @@ private fun ContactBadge(contactState: String, status: String) {
         )
         return
     }
-    val color = if (contactState == "online") AppTheme.Primary else AppTheme.Disabled
+    // Red rather than grey for an *active* machine that stopped answering: the operator said this
+    // one should be taking work, so its silence is a fault and not a setting. A paused or revoked
+    // worker never reaches here — it is drawn by its status above.
+    val color = when (contactState) {
+        "online" -> AppTheme.Primary
+        "offline" -> AppTheme.Danger
+        else -> AppTheme.Disabled
+    }
     Badge(contactLabel(contactState), color)
 }
 
