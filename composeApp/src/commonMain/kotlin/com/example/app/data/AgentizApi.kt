@@ -52,11 +52,15 @@ class AgentizApi(baseUrl: String = platformDefaultBaseUrl()) {
     /**
      * The token's user as the server sees it *now* — most importantly a fresh timezone offset:
      * the stored session keeps the offset from login day, and DST or a profile edit moves it.
+     *
+     * The whole response is returned rather than just the user, because the server renews a session
+     * that is past half its life here: [MeResponse.token], when present, is the credential the next
+     * launch has to use.
      */
-    suspend fun me(token: String): UserDto =
+    suspend fun me(token: String): MeResponse =
         client.get("$root/auth/me") {
             bearerAuth(token)
-        }.decodeOrThrow<MeResponse>().user
+        }.decodeOrThrow()
 
     /**
      * Mints a short-lived, one-use WebView URL for the Agentiz Assistant.

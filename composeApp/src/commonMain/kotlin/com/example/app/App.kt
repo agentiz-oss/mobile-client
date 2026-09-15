@@ -21,6 +21,7 @@ import com.example.app.components.MenuEntry
 import com.example.app.data.AgentizApi
 import com.example.app.data.ProjectDto
 import com.example.app.data.Session
+import com.example.app.data.ApiException
 import com.example.app.data.clearSession
 import com.example.app.data.loadSession
 import com.example.app.data.saveSession
@@ -222,16 +223,30 @@ fun App() {
     // permission prompt away from the login screen, where it would be a prompt about nothing.
     LaunchedEffect(current.token) { ensurePushRegistration() }
 
-    // Refresh who we are on every (re)start: the stored session carries the timezone offset from
-    // login day, and DST or a profile edit moves it. Failure is silent — the stale copy still works.
+    // Refresh the session on every (re)start, which does two things. The stored copy carries the
+    // timezone offset from login day and DST or a profile edit moves it; and the server hands back
+    // a renewed token once the current one is past half its life, so a phone that is opened at all
+    // never reaches the expiry — storing it here is the whole of "stay signed in".
+    //
+    // A network failure is silent, because the stale copy still works. A 401 is not: the token is
+    // gone for good and every screen would otherwise render the same error forever, so the session
+    // is dropped and the login screen asks once.
     LaunchedEffect(current.token, current.serverUrl) {
-        runCatching { AgentizApi(current.serverUrl).me(current.token) }.onSuccess { fresh ->
-            val updated = current.copy(user = fresh)
-            if (updated != current) {
-                saveSession(updated)
-                session = updated
+        runCatching { AgentizApi(current.serverUrl).me(current.token) }
+            .onSuccess { fresh ->
+                val updated = current.copy(user = fresh.user, token = fresh.token ?: current.token)
+                if (updated != current) {
+                    saveSession(updated)
+                    session = updated
+                }
             }
-        }
+            .onFailure { error ->
+                if (error is ApiException && error.status == 401) {
+                    clearSession()
+                    session = null
+                    destination = Destination.Projects
+                }
+            }
     }
 
     val registration by Push.registration.collectAsState()

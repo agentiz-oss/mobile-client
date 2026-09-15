@@ -28,7 +28,17 @@ data class UserDto(
 
 /** Response of GET /auth/me. */
 @Serializable
-data class MeResponse(val user: UserDto)
+data class MeResponse(
+    val user: UserDto,
+    /**
+     * A replacement bearer token, sent only once the current one is past half its life. Storing it
+     * is what keeps a session from ever reaching its expiry; the token in hand stays valid either
+     * way, so ignoring this field costs nothing until the day it runs out.
+     */
+    val token: String? = null,
+    /** When the session the server just answered with stops being accepted. */
+    val expiresAt: String? = null,
+)
 
 /** Response of POST /auth/login. */
 @Serializable
