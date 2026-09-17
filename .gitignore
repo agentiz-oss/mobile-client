@@ -35,6 +35,11 @@ iosApp/fastlane/app_store_connect_api_key.json
 *.mobileprovision
 apple-signing
 .playwright-mcp
+# Android upload key — per-deployment secret, same rule as the Firebase config below
+composeApp/keystore.properties
+*.jks
+*.keystore
+
 # Firebase config for Android push — per-deployment, not a repository artifact
 composeApp/google-services.json
 # Same, for iOS once the app registers an FCM token instead of a raw APNs one

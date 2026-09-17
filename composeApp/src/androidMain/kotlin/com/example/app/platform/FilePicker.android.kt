@@ -17,9 +17,12 @@ import kotlinx.coroutines.withContext
 /**
  * `GetMultipleContents` rather than `PickVisualMedia`: one contract serves both entry points by
  * taking the MIME filter at launch time, and it is the same chooser the user already knows from
- * every other app. The photo variant passes `image/*`, which on Android 13+ routes to the system
- * photo picker automatically — no `READ_MEDIA_IMAGES` permission is involved either way, because
- * the chooser hands back a Uri that is already granted to this process.
+ * every other app. The photo variant passes the image-only MIME filter spelled in `pickImages`
+ * below, which on Android 13+ routes to the system photo picker automatically — no
+ * `READ_MEDIA_IMAGES` permission is involved either way, because the chooser hands back a Uri that
+ * is already granted to this process. (The filter is named rather than quoted here on purpose:
+ * Kotlin block comments nest, so a literal slash-star inside this one opens a second comment and
+ * swallows the rest of the file.)
  */
 @Composable
 actual fun rememberFilePicker(onPicked: (List<PickedFile>) -> Unit): FilePickerLauncher {

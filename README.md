@@ -89,6 +89,12 @@ Native installers (`.deb`, `.msi`, `.dmg` for the host OS):
 Installs onto the running emulator or a connected device. Opening the repo root in Android Studio
 and hitting Run works too.
 
+A **release** build is signed only when the upload key is supplied — through the environment or a
+gitignored `composeApp/keystore.properties` — and produces an unsigned artifact otherwise, so a
+clone with no credentials still compiles. Every push to `main` builds a signed bundle and publishes
+it to Play's internal testing track; both halves are described in
+[`.github/workflows/README-android-play.md`](.github/workflows/README-android-play.md).
+
 ---
 
 ## iOS

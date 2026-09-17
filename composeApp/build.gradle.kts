@@ -1,3 +1,4 @@
+import java.util.Properties
 import org.jetbrains.compose.desktop.application.dsl.TargetFormat
 import org.jetbrains.kotlin.gradle.ExperimentalWasmDsl
 import org.jetbrains.kotlin.gradle.dsl.JvmTarget
@@ -149,6 +150,12 @@ kotlin {
             implementation(project.dependencies.platform(libs.firebase.bom))
             implementation(libs.firebase.messaging)
             implementation(libs.sqldelight.android.driver)
+            // Nothing here uses a Fragment. It is declared to raise the version: firebase-messaging
+            // drags in androidx.fragment 1.1.0 through play-services-basement, and a FragmentActivity
+            // older than 1.3.0 fails to call super.onRequestPermissionsResult(), which breaks
+            // registerForActivityResult — the permission launcher in push/Push.android.kt. Lint says
+            // so as a *fatal* error, so a release build does not even finish without this line.
+            implementation(libs.androidx.fragment)
         }
         desktopMain.dependencies {
             implementation(compose.desktop.currentOs)
@@ -178,6 +185,23 @@ sqldelight {
     }
 }
 
+/**
+ * Signing material for the Play upload key. Same rule as google-services.json above: it is a
+ * per-deployment secret, so nothing about it lives in the repository. Values come from the
+ * environment (that is what CI has) or from a gitignored `keystore.properties` next to this build
+ * script (that is what a person building a signed binary by hand has). With neither, `release`
+ * stays unsigned and still builds — a clone must not need a keystore to compile.
+ */
+val keystoreProperties = layout.projectDirectory.file("keystore.properties").asFile
+    .takeIf { it.exists() }
+    ?.let { file -> Properties().apply { file.inputStream().use { load(it) } } }
+
+fun signingValue(env: String, property: String): String? =
+    providers.environmentVariable(env).orNull?.ifEmpty { null }
+        ?: keystoreProperties?.getProperty(property)?.ifEmpty { null }
+
+val keystorePath = signingValue("ANDROID_KEYSTORE_FILE", "storeFile")
+
 android {
     // Deliberately still the template package, and not the application id below: the manifest names
     // its components relatively (`.MainActivity`, `.push.AgentizMessagingService`) and AGP resolves
@@ -189,12 +213,20 @@ android {
 
     defaultConfig {
         // What actually identifies the installation: to Play, and to FCM, whose google-services.json
-        // must contain a client with exactly this package name (it lists both this and the old one).
-        // Matches the iOS bundle id in iosApp/Configuration/Config.xcconfig.
-        applicationId = "cx.m42.agentoz"
+        // must contain a client with exactly this package name — the Google Services plugin fails
+        // the build outright when it does not, rather than leaving push quietly inert.
+        // Deliberately *not* the iOS bundle id (`cx.m42.agentoz` in
+        // iosApp/Configuration/Config.xcconfig), which belongs to the app already on TestFlight.
+        // The two stores never compare the strings, and a Play package cannot be renamed once its
+        // app record exists — so this string is chosen when the Play app is created and is fixed
+        // from that moment on.
+        applicationId = "cx.m42.agentiz"
         minSdk = libs.versions.androidMinSdk.get().toInt()
         targetSdk = libs.versions.androidTargetSdk.get().toInt()
-        versionCode = 1
+        // Play refuses an upload whose versionCode it has already seen, so the number has to come
+        // from something that only ever grows and is not edited by hand: the CI run number
+        // (`ANDROID_VERSION_CODE`). A local build keeps 1 — it never reaches Play.
+        versionCode = providers.environmentVariable("ANDROID_VERSION_CODE").orNull?.toIntOrNull() ?: 1
         versionName = appVersionName
     }
 
@@ -203,9 +235,25 @@ android {
         targetCompatibility = JavaVersion.VERSION_11
     }
 
+    signingConfigs {
+        // Declared only when the material is actually there; referencing a signingConfig whose
+        // storeFile does not exist fails the build at execution time rather than falling back.
+        if (keystorePath != null) {
+            create("release") {
+                storeFile = file(keystorePath)
+                storePassword = signingValue("ANDROID_KEYSTORE_PASSWORD", "storePassword")
+                keyAlias = signingValue("ANDROID_KEY_ALIAS", "keyAlias")
+                keyPassword = signingValue("ANDROID_KEY_PASSWORD", "keyPassword")
+            }
+        }
+    }
+
     buildTypes {
         getByName("release") {
             isMinifyEnabled = false
+            // Absent keystore ⇒ an unsigned release artifact, which is exactly what the build
+            // produced before this config existed.
+            signingConfig = signingConfigs.findByName("release")
         }
     }
 }

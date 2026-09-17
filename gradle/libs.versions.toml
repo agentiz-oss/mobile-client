@@ -4,6 +4,7 @@ composeMultiplatform = "1.11.1"
 agp = "8.13.2"
 composeUnstyled = "1.36.1"
 androidxActivityCompose = "1.13.0"
+androidxFragment = "1.8.9"
 androidCompileSdk = "36"
 androidMinSdk = "24"
 androidTargetSdk = "36"
@@ -21,6 +22,8 @@ compose-ui = { module = "org.jetbrains.compose.ui:ui", version.ref = "composeMul
 compose-ui-test = { module = "org.jetbrains.compose.ui:ui-test", version.ref = "composeMultiplatform" }
 compose-unstyled = { module = "com.composables:core", version.ref = "composeUnstyled" }
 androidx-activity-compose = { module = "androidx.activity:activity-compose", version.ref = "androidxActivityCompose" }
+# Not used directly — see the androidMain dependency block for why the version has to be stated.
+androidx-fragment = { module = "androidx.fragment:fragment", version.ref = "androidxFragment" }
 kotlinx-coroutines-core = { module = "org.jetbrains.kotlinx:kotlinx-coroutines-core", version.ref = "kotlinxCoroutines" }
 kotlinx-serialization-json = { module = "org.jetbrains.kotlinx:kotlinx-serialization-json", version.ref = "kotlinxSerializationJson" }
 ktor-client-core = { module = "io.ktor:ktor-client-core", version.ref = "ktor" }
