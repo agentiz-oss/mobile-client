@@ -121,18 +121,25 @@ jobs:
                   -alias "$ANDROID_KEY_ALIAS" >/dev/null
           echo "Keystore contains alias $ANDROID_KEY_ALIAS."
 
+      # Play refuses a versionCode it has already accepted. run_number only ever grows within a
+      # repository, including across re-runs of older commits, so it can never collide with another
+      # CI build. The 1000 offset keeps it from colliding with a *hand-made* one either: codes below
+      # 1000 belong to bundles built on a laptop, and the very first release of this app had to be
+      # uploaded that way because the Play API cannot create it.
+      #
+      # The sum is computed by the shell and not in a `${{ }}` expression: GitHub's expression
+      # language has no arithmetic operators at all, and a workflow containing one is rejected when
+      # it is *dispatched* — the file parses as YAML and fails only at the API, saying
+      # "Unexpected symbol: '+'".
+      - name: Choose the versionCode
+        run: echo "ANDROID_VERSION_CODE=$((1000 + GITHUB_RUN_NUMBER))" >> "$GITHUB_ENV"
+
       - name: Build the release bundle
         env:
           ANDROID_KEYSTORE_FILE: ${{ steps.keystore.outputs.path }}
           ANDROID_KEYSTORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
           ANDROID_KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
           ANDROID_KEY_PASSWORD: ${{ secrets.ANDROID_KEY_PASSWORD }}
-          # Play refuses a versionCode it has already accepted. run_number only ever grows within a
-          # repository, including across re-runs of older commits, so it can never collide with
-          # another CI build. The 1000 offset keeps it from colliding with a *hand-made* one either:
-          # codes below 1000 belong to bundles built on a laptop, and the very first release of this
-          # app had to be uploaded that way because the Play API cannot create it.
-          ANDROID_VERSION_CODE: ${{ 1000 + github.run_number }}
         run: ./gradlew :composeApp:bundleRelease --stacktrace
 
       # An APK as well, for installing on a phone directly — a Play bundle cannot be sideloaded.
@@ -142,7 +149,6 @@ jobs:
           ANDROID_KEYSTORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
           ANDROID_KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
           ANDROID_KEY_PASSWORD: ${{ secrets.ANDROID_KEY_PASSWORD }}
-          ANDROID_VERSION_CODE: ${{ 1000 + github.run_number }}
         run: ./gradlew :composeApp:assembleRelease --stacktrace
 
       - name: Confirm the bundle is signed
