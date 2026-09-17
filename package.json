@@ -1,0 +1,6 @@
+{
+  "name": "mobile-client-tooling",
+  "private": true,
+  "packageManager": "yarn@1.22.22",
+  "description": "Not a real Node project — Gradle's Kotlin/JS (wasmJs) tooling downloads its own classic Yarn and shells out to it from build/wasm. Before running anything, that Yarn binary walks up from its cwd through every ancestor package.json looking for the *first* one that declares a `packageManager` field (see `findPackageManager` in yarn's own cli.js) and refuses to start at all unless that value looks like a classic Yarn (`yarn@0.` or `yarn@1.`). This repo is checked out as a git submodule inside the agentiz server checkout, and that repo's own package.json is the first ancestor with such a field — but it says `\"packageManager\": \"yarn@4.14.1\"` (Corepack/Yarn Berry, correct for that Node project, unrelated to this one), which fails the check and aborts the wasmJs build before it compiles anything. The field here is what the walk finds *first* instead, with a version classic Yarn accepts — so a wasmJs build works from inside the full agentiz checkout, not only from a standalone clone of this repo. (`SKIP_YARN_COREPACK_CHECK=1` in the environment disables the same check outright, if this version ever drifts from what Gradle actually downloads.)"
+}
