@@ -4,6 +4,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.rememberUpdatedState
+import com.example.app.i18n.strings
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
@@ -33,7 +34,7 @@ actual fun rememberFilePicker(onPicked: (List<PickedFile>) -> Unit): FilePickerL
                         val chooser = JFileChooser().apply {
                             isMultiSelectionEnabled = true
                             if (imagesOnly) {
-                                fileFilter = FileNameExtensionFilter("Изображения", *IMAGE_EXTENSIONS)
+                                fileFilter = FileNameExtensionFilter(strings.filePickerImages, *IMAGE_EXTENSIONS)
                             }
                         }
                         if (chooser.showOpenDialog(null) != JFileChooser.APPROVE_OPTION) {

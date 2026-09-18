@@ -42,6 +42,7 @@ import com.example.app.data.ApiException
 import com.example.app.data.RunBoardDto
 import com.example.app.data.RunDto
 import com.example.app.data.Session
+import com.example.app.i18n.strings
 import com.example.app.markdown.markdownToPlainText
 import com.example.app.theme.AppTheme
 import kotlinx.coroutines.delay
@@ -81,7 +82,7 @@ fun RunsScreen(
         } catch (e: ApiException) {
             error = e.message
         } catch (e: Throwable) {
-            error = "Ошибка сети: ${e.message ?: "неизвестная ошибка"}"
+            error = strings.networkError(e.message)
         } finally {
             refreshing = false
         }
@@ -98,8 +99,8 @@ fun RunsScreen(
 
     val current = board
     AppScaffold(
-        title = "Запуски",
-        subtitle = current?.active?.size?.takeIf { it > 0 }?.let { "$it идёт сейчас" },
+        title = strings.runsTitle,
+        subtitle = current?.active?.size?.takeIf { it > 0 }?.let(strings::runsRunningNow),
         menu = menu,
         onOpenSettings = onOpenSettings,
         onOpenProfile = onOpenProfile,
@@ -107,7 +108,7 @@ fun RunsScreen(
     ) {
         when {
             current == null && error != null -> RetryState(message = error!!, onRetry = { reloadKey++ })
-            current == null -> CenterMessage("Загрузка запусков…")
+            current == null -> CenterMessage(strings.runsLoading)
             else -> PullToRefresh(
                 refreshing = refreshing,
                 onRefresh = {
@@ -130,7 +131,7 @@ fun RunsScreen(
                         }
                     }
 
-                    item(key = "active-title") { SectionHeader("Идут сейчас (${current.active.size})") }
+                    item(key = "active-title") { SectionHeader(strings.runsActiveHeader(current.active.size)) }
 
                     item(key = "active-card") {
                         GroupedCard {
@@ -140,7 +141,7 @@ fun RunsScreen(
                                     contentAlignment = Alignment.Center,
                                 ) {
                                     Text(
-                                        text = "Сейчас ничего не выполняется.",
+                                        text = strings.runsIdle,
                                         style = AppTheme.Body,
                                         color = AppTheme.Muted,
                                     )
@@ -154,7 +155,7 @@ fun RunsScreen(
                     }
 
                     if (current.recent.isNotEmpty()) {
-                        item(key = "recent-title") { SectionHeader("Завершились недавно") }
+                        item(key = "recent-title") { SectionHeader(strings.runsRecent) }
                         item(key = "recent-card") {
                             GroupedCard {
                                 current.recent.forEachIndexed { index, run ->
@@ -209,7 +210,7 @@ private fun RunBoardRow(
         Column(modifier = Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(6.dp)) {
             Column {
                 Text(
-                    text = run.taskTitle?.takeIf { it.isNotBlank() } ?: "Запуск",
+                    text = run.taskTitle?.takeIf { it.isNotBlank() } ?: strings.runFallbackTitle,
                     style = AppTheme.Body.copy(fontWeight = FontWeight.SemiBold),
                     color = AppTheme.Foreground,
                     maxLines = 2,
@@ -250,7 +251,8 @@ private fun RunBoardRow(
 
             if (run.pendingInteractions > 0) {
                 Text(
-                    text = if (run.pendingInteractions == 1) "ждёт ответа" else "ждёт ответа (${run.pendingInteractions})",
+                    text = if (run.pendingInteractions == 1) strings.runWaitingAnswer
+                    else strings.runWaitingAnswerCount(run.pendingInteractions),
                     style = AppTheme.Label,
                     color = AppTheme.PrimaryForeground,
                     modifier = Modifier
@@ -291,13 +293,7 @@ private fun stageProgress(run: RunDto): String? {
     val current = run.stages.firstOrNull { it.status == "running" || it.status == "waiting_input" }
         ?: run.stages.firstOrNull { it.status == "failed" }
     val label = current?.let { stage ->
-        val state = when (stage.status) {
-            "running" -> "идёт"
-            "waiting_input" -> "ждёт ответа"
-            "failed" -> "ошибка"
-            else -> stage.status
-        }
-        "${stage.role} $state"
+        "${stage.role} ${strings.stageState(stage.status) ?: stage.status}"
     }
     return listOfNotNull("$done/${run.stages.size}", label).joinToString(" · ")
 }

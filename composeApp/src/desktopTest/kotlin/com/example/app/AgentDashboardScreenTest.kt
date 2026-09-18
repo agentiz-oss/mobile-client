@@ -4,7 +4,7 @@ import com.example.app.screens.assistantWebviewUrl
 import kotlin.test.Test
 import kotlin.test.assertEquals
 
-class AgentDashboardScreenTest {
+class AgentDashboardScreenTest : RussianUiTest() {
 
     @Test
     fun webviewLaunchUsesTheServerFromTheSessionForARelativeUrl() {

@@ -32,6 +32,7 @@ import com.example.app.data.AgentizApi
 import com.example.app.data.ApiException
 import com.example.app.data.Session
 import com.example.app.data.platformDefaultBaseUrl
+import com.example.app.i18n.strings
 import com.example.app.theme.AppTheme
 import com.example.app.platform.hapticActionComplete
 import kotlinx.coroutines.launch
@@ -64,7 +65,7 @@ fun LoginScreen(onLoggedIn: (Session) -> Unit) {
             } catch (e: ApiException) {
                 error = e.message
             } catch (e: Throwable) {
-                error = "Не удалось подключиться к серверу: ${e.message ?: "неизвестная ошибка"}"
+                error = strings.loginConnectFailed(e.message)
             } finally {
                 api.close()
                 busy = false
@@ -90,14 +91,14 @@ fun LoginScreen(onLoggedIn: (Session) -> Unit) {
             Text(text = "Agentiz", style = AppTheme.Title, color = AppTheme.Foreground)
             Spacer(Modifier.height(8.dp))
             Text(
-                text = "Войдите, чтобы посмотреть свои проекты",
+                text = strings.loginPrompt,
                 style = AppTheme.Body,
                 color = AppTheme.Muted,
             )
             Spacer(Modifier.height(32.dp))
 
             AppTextField(
-                label = "Сервер",
+                label = strings.loginServer,
                 value = server,
                 onValueChange = { server = it },
                 placeholder = AGENTIZ_SERVER_URL,
@@ -105,7 +106,7 @@ fun LoginScreen(onLoggedIn: (Session) -> Unit) {
             )
             Spacer(Modifier.height(16.dp))
             AppTextField(
-                label = "Логин",
+                label = strings.loginName,
                 value = login,
                 onValueChange = { login = it },
                 placeholder = "admin",
@@ -113,7 +114,7 @@ fun LoginScreen(onLoggedIn: (Session) -> Unit) {
             )
             Spacer(Modifier.height(16.dp))
             AppTextField(
-                label = "Пароль",
+                label = strings.loginPassword,
                 value = password,
                 onValueChange = { password = it },
                 isPassword = true,
@@ -128,7 +129,7 @@ fun LoginScreen(onLoggedIn: (Session) -> Unit) {
 
             Spacer(Modifier.height(24.dp))
             AppButton(
-                text = if (busy) "Вход…" else "Войти",
+                text = if (busy) strings.loginBusy else strings.loginSubmit,
                 onClick = ::submit,
                 enabled = !busy && login.isNotBlank() && password.isNotBlank(),
                 modifier = Modifier.fillMaxWidth(),

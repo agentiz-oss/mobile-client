@@ -16,7 +16,7 @@ import kotlin.test.assertNull
  * once — is shared. Two payload kinds travel: the legacy `type=interaction` question, and
  * `type=activity` for everything the feed announces.
  */
-class PushRouteTest {
+class PushRouteTest : RussianUiTest() {
 
     @AfterTest
     fun clearRoute() {

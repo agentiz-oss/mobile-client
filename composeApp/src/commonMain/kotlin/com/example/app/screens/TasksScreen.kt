@@ -45,6 +45,7 @@ import com.example.app.data.LocalStore
 import com.example.app.data.ProjectDto
 import com.example.app.data.Session
 import com.example.app.data.TaskDto
+import com.example.app.i18n.strings
 import com.example.app.platform.PickedFile
 import com.example.app.platform.rememberFilePicker
 import com.example.app.theme.AppTheme
@@ -102,7 +103,7 @@ fun TasksScreen(
         } catch (e: ApiException) {
             error = e.message
         } catch (e: Throwable) {
-            error = "Ошибка сети: ${e.message ?: "неизвестная ошибка"}"
+            error = strings.networkError(e.message)
         } finally {
             loading = false
             refreshing = false
@@ -119,7 +120,7 @@ fun TasksScreen(
                 // After creation, not before: the upload endpoint is addressed by task id, and a
                 // task that failed validation must not leave orphaned files behind it.
                 newTaskFiles.toList().forEachIndexed { index, file ->
-                    uploadLabel = "Загрузка ${index + 1} из ${newTaskFiles.size}: ${file.fileName}"
+                    uploadLabel = strings.attachmentUploading(index + 1, newTaskFiles.size, file.fileName)
                     api.uploadAttachment(session.token, created.id, file.fileName, file.mimeType, file.bytes)
                 }
                 newTaskFiles.clear()
@@ -130,7 +131,7 @@ fun TasksScreen(
             } catch (e: ApiException) {
                 error = e.message
             } catch (e: Throwable) {
-                error = "Ошибка сети: ${e.message ?: "неизвестная ошибка"}"
+                error = strings.networkError(e.message)
             } finally {
                 uploadLabel = null
                 creating = false
@@ -187,7 +188,7 @@ fun TasksScreen(
                         )
                     } else {
                         AppButton(
-                            text = "Новая задача",
+                            text = strings.tasksNew,
                             onClick = { composing = true },
                             modifier = Modifier.fillMaxWidth(),
                         )
@@ -205,19 +206,19 @@ fun TasksScreen(
 
                 when {
                     loading && tasks == null -> item(key = "loading") {
-                        CenterBlock("Загрузка задач…", AppTheme.Muted)
+                        CenterBlock(strings.tasksLoading, AppTheme.Muted)
                     }
 
                     error != null && tasks == null -> item(key = "retry") {
                         Column(horizontalAlignment = Alignment.CenterHorizontally) {
                             Text(text = error!!, style = AppTheme.Body, color = AppTheme.Danger)
                             Spacer(Modifier.height(16.dp))
-                            AppButton(text = "Повторить", onClick = { reloadKey++ })
+                            AppButton(text = strings.retry, onClick = { reloadKey++ })
                         }
                     }
 
                     tasks.isNullOrEmpty() -> item(key = "empty") {
-                        CenterBlock("В проекте пока нет задач.", AppTheme.Muted)
+                        CenterBlock(strings.tasksEmpty, AppTheme.Muted)
                     }
 
                     else -> items(tasks!!, key = { it.id }) { task ->
@@ -263,18 +264,18 @@ private fun NewTaskForm(
             .padding(16.dp),
     ) {
         AppTextField(
-            label = "Заголовок",
+            label = strings.taskTitleLabel,
             value = title,
             onValueChange = onTitleChange,
-            placeholder = "Что нужно сделать",
+            placeholder = strings.taskTitlePlaceholder,
             enabled = !busy,
         )
         Spacer(Modifier.height(12.dp))
         AppTextField(
-            label = "Описание",
+            label = strings.taskDescriptionLabel,
             value = description,
             onValueChange = onDescriptionChange,
-            placeholder = "Подробности (необязательно)",
+            placeholder = strings.taskDescriptionPlaceholder,
             enabled = !busy,
             imeAction = ImeAction.Done,
             // A description is prose, not a line: let it wrap and grow rather than scrolling
@@ -295,12 +296,12 @@ private fun NewTaskForm(
         Spacer(Modifier.height(16.dp))
         Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
             AppButton(
-                text = if (busy) "Создание…" else "Создать",
+                text = if (busy) strings.taskCreating else strings.taskCreate,
                 onClick = onSubmit,
                 enabled = !busy && title.isNotBlank(),
                 modifier = Modifier.weight(1f),
             )
-            AppButton(text = "Отмена", onClick = onCancel, enabled = !busy)
+            AppButton(text = strings.cancel, onClick = onCancel, enabled = !busy)
         }
     }
 }
@@ -344,19 +345,22 @@ private fun TaskCard(task: TaskDto, onClick: () -> Unit) {
  */
 @Composable
 fun TaskStatusBadge(status: String) {
-    val (label, color) = when (status) {
-        "new" -> "новая" to AppTheme.Disabled
-        "queued" -> "в очереди" to AppTheme.Muted
-        "running" -> "выполняется" to AppTheme.Muted
+    val color = when (status) {
+        "new" -> AppTheme.Disabled
+        "queued" -> AppTheme.Muted
+        "running" -> AppTheme.Muted
         // Not muted like the other in-flight states: this one is stuck until a person answers.
-        "waiting_input" -> "ждёт ответа" to AppTheme.Primary
-        "waiting_review" -> "на проверке" to AppTheme.Muted
-        "done" -> "готово" to AppTheme.Primary
-        "failed" -> "ошибка" to AppTheme.Danger
-        "cancelled" -> "отменена" to AppTheme.Disabled
-        "ignored" -> "пропущена" to AppTheme.Disabled
-        else -> status to AppTheme.Muted
+        "waiting_input" -> AppTheme.Primary
+        "waiting_review" -> AppTheme.Muted
+        "done" -> AppTheme.Primary
+        "failed" -> AppTheme.Danger
+        "cancelled" -> AppTheme.Disabled
+        "ignored" -> AppTheme.Disabled
+        else -> AppTheme.Muted
     }
+    // An unknown status is printed as the server spelled it rather than dropped: a state this
+    // build has never heard of is still a state, and a blank badge would say the task has none.
+    val label = strings.taskState(status) ?: status
     Text(
         text = label,
         style = AppTheme.Label,

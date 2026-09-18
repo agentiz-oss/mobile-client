@@ -21,7 +21,7 @@ import kotlin.test.assertNull
  * Every case pins [ViewerTime.deviceOffsetMinutes] rather than letting it reach the real platform:
  * the build machine's zone is not a test input.
  */
-class TimeFormatTest {
+class TimeFormatTest : RussianUiTest() {
 
     @BeforeTest
     fun pinDevice() {

@@ -17,7 +17,7 @@ import kotlinx.serialization.json.putJsonObject
  * server's resolution falls through to the next level), and unknown keys written by a newer server
  * survive a round trip through this build's editor.
  */
-class NotificationPolicyDocTest {
+class NotificationPolicyDocTest : RussianUiTest() {
 
     private val empty = JsonObject(emptyMap())
 

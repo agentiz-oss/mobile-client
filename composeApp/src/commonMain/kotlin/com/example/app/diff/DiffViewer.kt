@@ -58,6 +58,7 @@ import androidx.compose.ui.text.withStyle
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import com.example.app.i18n.strings
 import com.example.app.theme.AppTheme
 
 /**
@@ -130,11 +131,11 @@ internal fun DiffViewer(
     palette: DiffPalette = DiffPalette.Light,
 ) {
     if (fileDiff.isBinary) {
-        Indicator("Бинарный файл — содержимое не показывается", modifier)
+        Indicator(strings.diffBinary, modifier)
         return
     }
     if (fileDiff.hunks.isEmpty()) {
-        Indicator("Нет строк для показа", modifier)
+        Indicator(strings.diffNoLines, modifier)
         return
     }
 

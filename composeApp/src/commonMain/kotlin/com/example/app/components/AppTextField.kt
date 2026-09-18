@@ -37,6 +37,7 @@ import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.text.input.VisualTransformation
 import androidx.compose.ui.unit.dp
 import com.composeunstyled.Text
+import com.example.app.i18n.strings
 import com.example.app.theme.AppTheme
 
 /**
@@ -174,7 +175,7 @@ private fun PasswordVisibilityToggle(
             .clip(CircleShape)
             .clickable(enabled = enabled, role = Role.Button, onClick = onToggle)
             .semantics {
-                contentDescription = if (visible) "Скрыть пароль" else "Показать пароль"
+                contentDescription = if (visible) strings.passwordHide else strings.passwordShow
             },
         contentAlignment = Alignment.Center,
     ) {

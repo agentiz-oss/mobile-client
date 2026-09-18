@@ -1,6 +1,7 @@
 package com.example.app.screens
 
 import com.example.app.data.RunUsageDto
+import com.example.app.i18n.strings
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonElement
 import kotlinx.serialization.json.JsonObject
@@ -32,7 +33,7 @@ internal fun totalTokens(usage: RunUsageDto): Long =
 
 /** "· 110k ткн" for a run card, or null when there is nothing worth a badge. */
 internal fun tokensBadge(usage: RunUsageDto?): String? =
-    usage?.let(::totalTokens)?.takeIf { it > 0 }?.let { "${formatTokens(it)} ткн" }
+    usage?.let(::totalTokens)?.takeIf { it > 0 }?.let { strings.tokensBadge(formatTokens(it)) }
 
 /** "≈ $0.2779" under a dime, "≈ $0.28" above — the dashboard's precision rule. */
 internal fun formatCostUsd(cost: Double): String {

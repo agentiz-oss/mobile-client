@@ -52,6 +52,7 @@ import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.dp
 import com.composeunstyled.Text
 import com.example.app.BuildInfo
+import com.example.app.i18n.strings
 import com.example.app.platform.hapticActionComplete
 import com.example.app.theme.AppTheme
 import kotlin.math.roundToInt
@@ -417,7 +418,7 @@ private fun TopBar(
         ) {
             IconButton(
                 onClick = onOpenMenu,
-                label = "Открыть меню",
+                label = strings.openMenu,
             ) { tint -> BurgerIcon(tint) }
 
             Column(
@@ -444,7 +445,7 @@ private fun TopBar(
             // Back is the screen's own affordance, not the menu's, so it stays on the bar — but
             // only where there is somewhere to go back to.
             if (onBack != null) {
-                IconButton(onClick = onBack, label = "Назад") { tint ->
+                IconButton(onClick = onBack, label = strings.backAction) { tint ->
                     BackIcon(tint)
                 }
             }
@@ -494,7 +495,7 @@ private fun BoxScope.MenuPanel(
             // No close button: the pushed-aside screen is always on show and always dismisses on
             // tap, so a second way out would only crowd the header.
             Text(
-                text = "Меню",
+                text = strings.menu,
                 style = AppTheme.Title,
                 color = AppTheme.Foreground,
                 modifier = Modifier.padding(horizontal = 20.dp, vertical = 12.dp),
@@ -545,7 +546,7 @@ private fun FooterActions(
                 onDismiss()
                 onOpenSettings()
             },
-            label = "Настройки",
+            label = strings.settings,
         ) { tint -> SettingsIcon(tint) }
 
         IconButton(
@@ -553,7 +554,7 @@ private fun FooterActions(
                 onDismiss()
                 onOpenProfile()
             },
-            label = "Профиль",
+            label = strings.profile,
         ) { tint -> PersonIcon(tint) }
     }
 }
@@ -567,7 +568,7 @@ private fun BuildStamp() {
             .padding(horizontal = 20.dp, vertical = 12.dp),
     ) {
         Text(
-            text = "Версия ${BuildInfo.VERSION}",
+            text = strings.version(BuildInfo.VERSION),
             style = AppTheme.Label,
             color = AppTheme.Muted,
         )

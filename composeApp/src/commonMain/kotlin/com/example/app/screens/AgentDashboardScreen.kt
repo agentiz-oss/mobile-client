@@ -24,6 +24,7 @@ import com.example.app.components.MenuEntry
 import com.example.app.data.AgentizApi
 import com.example.app.data.ApiException
 import com.example.app.data.Session
+import com.example.app.i18n.strings
 import com.example.app.theme.AppTheme
 
 /**
@@ -58,21 +59,21 @@ fun AgentDashboardScreen(
         } catch (e: ApiException) {
             error = e.message
         } catch (e: Throwable) {
-            error = "Ошибка сети: ${e.message ?: "неизвестная ошибка"}"
+            error = strings.networkError(e.message)
         } finally {
             loading = false
         }
     }
 
     AppScaffold(
-        title = "Диалог с агентом",
+        title = strings.agentTitle,
         menu = menu,
         onBack = onBack,
         onOpenSettings = onOpenSettings,
         onOpenProfile = onOpenProfile,
     ) {
         when {
-            loading -> AgentStatus(text = "Подключаем агента…")
+            loading -> AgentStatus(text = strings.agentConnecting)
             error != null -> AgentError(message = error!!, onRetry = { reloadKey++ })
             webviewUrl != null -> EmbeddedDashboard(
                 url = webviewUrl!!,
@@ -115,7 +116,7 @@ private fun AgentError(message: String, onRetry: () -> Unit) {
     ) {
         Text(text = message, style = AppTheme.Body, color = AppTheme.Danger)
         AppButton(
-            text = "Повторить",
+            text = strings.retry,
             onClick = onRetry,
             modifier = Modifier.fillMaxWidth().padding(top = 16.dp),
         )

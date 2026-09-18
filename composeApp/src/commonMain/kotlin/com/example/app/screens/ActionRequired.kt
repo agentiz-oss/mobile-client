@@ -41,6 +41,7 @@ import com.example.app.data.InboxItemDto
 import com.example.app.data.InteractionDto
 import com.example.app.data.ProposalDto
 import com.example.app.data.Session
+import com.example.app.i18n.strings
 import com.example.app.theme.AppTheme
 import kotlinx.coroutines.launch
 
@@ -110,7 +111,7 @@ fun ActionRequiredSection(
             } catch (e: ApiException) {
                 error = e.message
             } catch (e: Throwable) {
-                error = "Ошибка сети: ${e.message ?: "неизвестная ошибка"}"
+                error = strings.networkError(e.message)
             } finally {
                 loadingDetail = false
             }
@@ -130,7 +131,7 @@ fun ActionRequiredSection(
             } catch (e: ApiException) {
                 error = e.message
             } catch (e: Throwable) {
-                error = "Ошибка сети: ${e.message ?: "неизвестная ошибка"}"
+                error = strings.networkError(e.message)
             } finally {
                 busyId = null
             }
@@ -157,7 +158,10 @@ fun ActionRequiredSection(
     }
 
     Column(modifier = modifier.fillMaxWidth()) {
-        SectionTitle(if (items.size == 1) "Требуется ваше участие" else "Требуется ваше участие (${items.size})")
+        SectionTitle(
+            if (items.size == 1) strings.actionRequiredTitle
+            else strings.actionRequiredTitleCount(items.size),
+        )
         Spacer(Modifier.height(8.dp))
         error?.let { message ->
             Text(text = message, style = AppTheme.Label, color = AppTheme.Danger)
@@ -252,7 +256,7 @@ internal fun ActionRequiredCard(
                 size = BadgeSize.Sm,
             )
             formatWaiting(item.waitingSince)?.let { age ->
-                Text(text = "ждёт $age", style = AppTheme.Footnote, color = AppTheme.Muted)
+                Text(text = strings.waitingFor(age), style = AppTheme.Footnote, color = AppTheme.Muted)
             }
         }
         Spacer(Modifier.height(8.dp))
@@ -269,7 +273,11 @@ internal fun ActionRequiredCard(
         }
         formatRemaining(item.expiresAt)?.let { left ->
             Spacer(Modifier.height(6.dp))
-            Text(text = "ответ ждут ещё $left", style = AppTheme.Footnote, color = AppTheme.Warning)
+            Text(
+                text = strings.answerAwaitedFor(left),
+                style = AppTheme.Footnote,
+                color = AppTheme.Warning,
+            )
         }
         // The same line the inbox row carries: how this event is delivered, and the way to change
         // it. One wording, one panel, wherever the row is drawn.
@@ -287,7 +295,8 @@ internal fun ActionRequiredCard(
                     muted = notify.push == "off",
                 )
                 Text(
-                    text = if (onOpenNotify != null) "${notify.label} · настроить" else notify.label,
+                    text = if (onOpenNotify != null) strings.notifyConfigure(notify.label)
+                    else notify.label,
                     style = AppTheme.Footnote,
                     color = if (notify.push == "off") AppTheme.Danger else AppTheme.Muted,
                 )
@@ -319,7 +328,7 @@ internal fun ActionRequiredCard(
             Spacer(Modifier.height(12.dp))
             when {
                 mode == "notify" && notifyPanel != null -> notifyPanel()
-                loadingDetail -> Text(text = "Загрузка…", style = AppTheme.Label, color = AppTheme.Muted)
+                loadingDetail -> Text(text = strings.loading, style = AppTheme.Label, color = AppTheme.Muted)
                 interaction != null -> InteractionCard(interaction = interaction, busy = busy, onAnswer = onAnswer)
                 proposal != null -> ProposalReviewSection(
                     proposal = proposal,
@@ -336,7 +345,7 @@ internal fun ActionRequiredCard(
                     onReject = { comment -> onDecideApproval("rejected", comment) },
                 )
                 else -> Text(
-                    text = "Это уже решено — экран сейчас обновится.",
+                    text = strings.actionAlreadyDecided,
                     style = AppTheme.Label,
                     color = AppTheme.Muted,
                 )

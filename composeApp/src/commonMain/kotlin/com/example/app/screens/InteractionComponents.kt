@@ -25,6 +25,7 @@ import com.composeunstyled.Text
 import com.example.app.components.AppButton
 import com.example.app.components.AppTextField
 import com.example.app.data.InteractionDto
+import com.example.app.i18n.strings
 import com.example.app.markdown.MarkdownText
 import com.example.app.theme.AppTheme
 import kotlinx.serialization.json.JsonArray
@@ -275,7 +276,7 @@ internal fun InteractionCard(
             horizontalArrangement = Arrangement.SpaceBetween,
             verticalAlignment = Alignment.CenterVertically,
         ) {
-            Text(text = "Агент ждёт ответа", style = AppTheme.Label, color = AppTheme.Foreground)
+            Text(text = strings.interactionWaiting, style = AppTheme.Label, color = AppTheme.Foreground)
             val stamp = formatTimestamp(interaction.createdAt)
             if (stamp != null) {
                 Text(text = stamp, style = AppTheme.Label, color = AppTheme.Muted)
@@ -331,7 +332,7 @@ internal fun InteractionCard(
         if (fields.isEmpty()) {
             Spacer(Modifier.height(12.dp))
             Text(
-                text = "Вопрос без полей — подтвердите или откажитесь.",
+                text = strings.interactionNoFields,
                 style = AppTheme.Label,
                 color = AppTheme.Muted,
             )
@@ -341,14 +342,18 @@ internal fun InteractionCard(
         if (deadline != null) {
             Spacer(Modifier.height(12.dp))
             // The run is cancelled when this passes, so it is a consequence, not a footnote.
-            val left = formatRemaining(interaction.expiresAt)?.let { " (осталось $it)" } ?: ""
-            Text(text = "Ответ ждут до $deadline$left", style = AppTheme.Label, color = AppTheme.Muted)
+            val left = formatRemaining(interaction.expiresAt).orEmpty()
+            Text(
+                text = strings.interactionDeadline(deadline, left),
+                style = AppTheme.Label,
+                color = AppTheme.Muted,
+            )
         }
 
         if (missing.isNotEmpty()) {
             Spacer(Modifier.height(12.dp))
             Text(
-                text = "Заполните: ${missing.joinToString(", ") { it.title }}",
+                text = strings.interactionMissing(missing.joinToString(", ") { it.title }),
                 style = AppTheme.Label,
                 color = AppTheme.Muted,
             )
@@ -356,7 +361,7 @@ internal fun InteractionCard(
 
         Spacer(Modifier.height(16.dp))
         AppButton(
-            text = if (busy) "…" else "Ответить",
+            text = if (busy) "…" else strings.interactionAnswer,
             onClick = { onAnswer("accept", buildAnswerContent(fields, values)) },
             enabled = !busy && missing.isEmpty(),
             modifier = Modifier.fillMaxWidth(),
@@ -364,13 +369,13 @@ internal fun InteractionCard(
         Spacer(Modifier.height(8.dp))
         Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
             SecondaryAction(
-                text = "Пропустить",
+                text = strings.interactionSkip,
                 enabled = !busy,
                 onClick = { onAnswer("decline", null) },
                 modifier = Modifier.weight(1f),
             )
             SecondaryAction(
-                text = "Отменить",
+                text = strings.interactionCancel,
                 enabled = !busy,
                 onClick = { onAnswer("cancel", null) },
                 modifier = Modifier.weight(1f),
@@ -395,7 +400,7 @@ private fun FieldEditor(
             FieldHint(field.description)
             Spacer(Modifier.height(8.dp))
             OptionPills(
-                options = listOf("true" to "Да", "false" to "Нет"),
+                options = listOf("true" to strings.yes, "false" to strings.no),
                 selected = value,
                 enabled = enabled,
                 onSelect = onValueChange,
@@ -409,7 +414,8 @@ private fun FieldEditor(
             // Pills are addressed by position, so an option's own value — which may be a number or
             // any other JSON — never has to survive a round trip through the UI as text.
             val options = field.choices.mapIndexed { index, choice -> index.toString() to choice.label } +
-                if (field.otherName != null) listOf(OTHER_SELECTION to "Другое") else emptyList()
+                if (field.otherName != null) listOf(OTHER_SELECTION to strings.interactionOwnOption)
+                else emptyList()
             OptionPills(
                 options = options,
                 selected = value,
@@ -422,10 +428,10 @@ private fun FieldEditor(
             if (field.otherName != null && value == OTHER_SELECTION) {
                 Spacer(Modifier.height(8.dp))
                 AppTextField(
-                    label = "Свой вариант",
+                    label = strings.interactionOwnOptionLabel,
                     value = otherValue,
                     onValueChange = onOtherChange,
-                    placeholder = "Ответ…",
+                    placeholder = strings.interactionAnswerPlaceholder,
                     enabled = enabled,
                     imeAction = ImeAction.Done,
                 )
@@ -438,9 +444,9 @@ private fun FieldEditor(
                 value = value,
                 onValueChange = onValueChange,
                 placeholder = when (field.kind) {
-                    FieldKind.NUMBER -> "Число"
+                    FieldKind.NUMBER -> strings.interactionNumberPlaceholder
                     FieldKind.RAW -> "JSON"
-                    else -> "Ответ…"
+                    else -> strings.interactionAnswerPlaceholder
                 },
                 enabled = enabled,
                 imeAction = ImeAction.Done,
@@ -550,7 +556,7 @@ internal fun AnsweredInteractionRow(interaction: InteractionDto) {
 internal fun ClosedInteractionNote(interaction: InteractionDto) {
     Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
         Text(
-            text = "Этот вопрос уже закрыт — ${interactionStatusLabel(interaction)}",
+            text = strings.interactionClosed(interactionStatusLabel(interaction)),
             style = AppTheme.Label,
             color = AppTheme.Muted,
         )
@@ -561,16 +567,8 @@ internal fun ClosedInteractionNote(interaction: InteractionDto) {
 /** How a question ended, in the same vocabulary the dashboard uses. */
 internal fun interactionStatusLabel(interaction: InteractionDto): String {
     val who = interaction.answeredByName?.takeIf { it.isNotBlank() }
-    return when (interaction.status) {
-        "pending" -> "ждёт ответа"
-        "answered", "delivered" -> when (interaction.responseAction) {
-            "accept" -> if (who != null) "ответил(а) $who" else "получен ответ"
-            "decline" -> "пропущен"
-            else -> "отменён"
-        }
-        "expired" -> "истёк срок ответа"
-        "cancelled" -> "отменён"
-        "orphaned" -> "запуск прерван"
-        else -> interaction.status
-    }
+    // `delivered` is spelled out here rather than in the table: to a reader it is the same state
+    // as `answered`, and a table that had to know both would be the place the two drift apart.
+    val status = if (interaction.status == "delivered") "answered" else interaction.status
+    return strings.interactionState(status, interaction.responseAction, who)
 }

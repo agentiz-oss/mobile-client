@@ -280,6 +280,29 @@ fun BellIcon(tint: Color, size: Dp = IconSize, muted: Boolean = false) {
     }
 }
 
+/**
+ * A globe, for the language setting.
+ *
+ * Three strokes and nothing else: an outline, the equator, and one meridian bowed into an ellipse.
+ * Continents would be unreadable at 18.dp and would also have to choose which half of the world to
+ * show, which is not a thing a language picker should be doing.
+ */
+@Composable
+fun GlobeIcon(tint: Color, size: Dp = IconSize) {
+    Icon(size) { s ->
+        circle(s, tint, 0.5f, 0.5f, 0.38f)
+        line(s, tint, 0.12f, 0.5f, 0.88f, 0.5f)
+        // The meridian is drawn as two mirrored quadratics rather than an oval: an oval would need
+        // its own bounds maths, and the curve only has to read as a bulge either side of the pole.
+        val meridian = Path().apply {
+            moveTo(s.x(0.5f), s.y(0.12f))
+            quadraticTo(s.x(0.26f), s.y(0.5f), s.x(0.5f), s.y(0.88f))
+            quadraticTo(s.x(0.74f), s.y(0.5f), s.x(0.5f), s.y(0.12f))
+        }
+        drawPath(meridian, tint, style = s.stroke)
+    }
+}
+
 /** A circled exclamation, for warnings and failed states. */
 @Composable
 fun AlertIcon(tint: Color, size: Dp = IconSize) {

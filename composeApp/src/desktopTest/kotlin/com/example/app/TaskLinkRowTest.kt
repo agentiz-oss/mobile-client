@@ -18,7 +18,7 @@ import kotlin.test.assertEquals
  * description, the discussion and the other attempts. It therefore has to survive a server that
  * sends no title at all: the destination exists either way.
  */
-class TaskLinkRowTest {
+class TaskLinkRowTest : RussianUiTest() {
 
     @OptIn(ExperimentalTestApi::class)
     @Test

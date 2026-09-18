@@ -32,7 +32,7 @@ import kotlin.test.assertTrue
  * most of them — used to print the same paragraphs twice, with a scrollbox of debug lines between
  * the two copies.
  */
-class RunResultLayoutTest {
+class RunResultLayoutTest : RussianUiTest() {
 
     private fun stage(role: String, response: String, status: String = "succeeded") = StageDto(
         role = role,

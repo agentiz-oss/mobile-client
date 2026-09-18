@@ -27,7 +27,7 @@ import kotlin.test.assertTrue
  * on the clipboard, and — in the composition — that nothing below the root is on screen until
  * somebody opens it.
  */
-class JsonViewerTest {
+class JsonViewerTest : RussianUiTest() {
 
     private fun json(text: String) = Json.parseToJsonElement(text)
 

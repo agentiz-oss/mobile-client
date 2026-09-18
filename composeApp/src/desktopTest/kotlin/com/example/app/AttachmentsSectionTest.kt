@@ -21,7 +21,7 @@ import kotlin.test.assertEquals
  * new task or a comment. Deleting lives in the viewer, the one place the reader can see the file
  * they are about to lose.
  */
-class AttachmentsSectionTest {
+class AttachmentsSectionTest : RussianUiTest() {
 
     private fun photo(id: String = "a1", name: String = "screen.png") =
         AttachmentDto(id = id, fileName = name, mimeType = "image/png", sizeBytes = 2048)

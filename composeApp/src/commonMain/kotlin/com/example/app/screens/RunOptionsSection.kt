@@ -18,6 +18,7 @@ import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.unit.dp
 import com.composeunstyled.Text
 import com.example.app.data.RunOptionsDto
+import com.example.app.i18n.strings
 import com.example.app.theme.AppTheme
 
 /**
@@ -69,22 +70,22 @@ fun RunOptionsSection(
             .padding(16.dp),
     ) {
         val summary = listOfNotNull(
-            harnessTitle ?: "обвязка по пайплайну",
-            model ?: "модель по умолчанию",
-            levelTitle?.let { "уровень: ${it.lowercase()}" } ?: "уровень: как у CLI",
+            harnessTitle ?: strings.runOptionsPipelineHarness,
+            model ?: strings.runOptionsPipelineModel,
+            levelTitle?.let(strings::runOptionsLevelSummary) ?: strings.runOptionsCliLevel,
         ).joinToString(" · ")
-        SectionTitle(if (expanded) "Чем запускать" else "Запустится: $summary")
+        SectionTitle(if (expanded) strings.runOptionsTitle else strings.runOptionsSummary(summary))
 
         if (!expanded) {
             Spacer(Modifier.height(6.dp))
-            Text(text = "Нажмите, чтобы выбрать", style = AppTheme.Label, color = AppTheme.Muted)
+            Text(text = strings.runOptionsHint, style = AppTheme.Label, color = AppTheme.Muted)
             return@Column
         }
 
         if (options.executors.isNotEmpty()) {
             Spacer(Modifier.height(12.dp))
             PickerRow(
-                title = "Обвязка",
+                title = strings.runOptionsHarness,
                 options = listOf(null to defaultLabel(options.defaults.harnessTitle))
                     + options.executors.map { "${it.workerId}:${it.executorKey}" to "${it.title} · ${it.workerName}" },
                 selected = choice.workerId?.let { "$it:${choice.executorKey}" },
@@ -108,7 +109,7 @@ fun RunOptionsSection(
         if (models.isNotEmpty()) {
             Spacer(Modifier.height(12.dp))
             PickerRow(
-                title = "Модель",
+                title = strings.runOptionsModel,
                 options = listOf(null to defaultLabel(options.defaults.model)) + models.map { it.id to it.title },
                 selected = choice.model,
                 enabled = enabled,
@@ -122,8 +123,8 @@ fun RunOptionsSection(
         if (levels.isNotEmpty()) {
             Spacer(Modifier.height(12.dp))
             PickerRow(
-                title = "Уровень рассуждений",
-                options = listOf(null to "По умолчанию") + levels.map { it.value to it.title },
+                title = strings.runOptionsLevel,
+                options = listOf(null to strings.runOptionsDefault) + levels.map { it.value to it.title },
                 selected = choice.reasoningLevel,
                 enabled = enabled,
                 onSelect = { onChoice(choice.copy(reasoningLevel = it)) },
@@ -133,7 +134,7 @@ fun RunOptionsSection(
         if (options.stages.size > 1) {
             Spacer(Modifier.height(12.dp))
             Text(
-                text = "Выбор применяется ко всем этапам запуска (${options.stages.size})",
+                text = strings.runOptionsAppliesToStages(options.stages.size),
                 style = AppTheme.Label,
                 color = AppTheme.Muted,
             )
@@ -143,7 +144,7 @@ fun RunOptionsSection(
 
 /** The "не выбрано" pill names what the pipeline itself would use, so the row has no blank end. */
 private fun defaultLabel(value: String?): String =
-    if (value.isNullOrBlank()) "Как в пайплайне" else "Как в пайплайне ($value)"
+    if (value.isNullOrBlank()) strings.runOptionsAsPipeline else strings.runOptionsAsPipelineNamed(value)
 
 @Composable
 private fun PickerRow(

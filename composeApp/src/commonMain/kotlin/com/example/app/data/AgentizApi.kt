@@ -1,5 +1,6 @@
 package com.example.app.data
 
+import com.example.app.i18n.strings
 import io.ktor.client.HttpClient
 import io.ktor.client.call.body
 import io.ktor.client.plugins.contentnegotiation.ContentNegotiation
@@ -61,6 +62,21 @@ class AgentizApi(baseUrl: String = platformDefaultBaseUrl()) {
         client.get("$root/auth/me") {
             bearerAuth(token)
         }.decodeOrThrow()
+
+    /**
+     * Writes the reader's language into their admin profile (`UserAP.locale`).
+     *
+     * A whole endpoint for one field because that field is the *setting*: the panel reads the same
+     * column, so a language chosen on the phone has to end up where the panel will find it, not in
+     * a copy only this device knows about. The updated user comes back, which is what lets the
+     * caller store a session that already agrees with the server.
+     */
+    suspend fun setLocale(token: String, locale: String): UserDto =
+        client.put("$root/auth/locale") {
+            bearerAuth(token)
+            contentType(ContentType.Application.Json)
+            setBody(SetLocaleRequest(locale = locale))
+        }.decodeOrThrow<MeResponse>().user
 
     /**
      * Mints a short-lived, one-use WebView URL for the Agentiz Assistant.
@@ -275,7 +291,7 @@ class AgentizApi(baseUrl: String = platformDefaultBaseUrl()) {
             bearerAuth(token)
         }
         if (!response.status.isSuccess()) {
-            throw ApiException(response.status.value, "Не удалось загрузить файл (HTTP ${response.status.value})")
+            throw ApiException(response.status.value, strings.fileUploadFailed(response.status.value))
         }
         return response.readRawBytes()
     }
@@ -286,7 +302,7 @@ class AgentizApi(baseUrl: String = platformDefaultBaseUrl()) {
         }
         if (!response.status.isSuccess()) {
             val serverMessage = runCatching { response.body<ErrorResponse>().message }.getOrNull()
-            throw ApiException(response.status.value, serverMessage ?: "Не удалось удалить файл")
+            throw ApiException(response.status.value, serverMessage ?: strings.fileDeleteFailed)
         }
     }
 

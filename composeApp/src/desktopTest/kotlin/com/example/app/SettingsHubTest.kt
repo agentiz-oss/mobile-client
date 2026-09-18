@@ -19,7 +19,7 @@ import kotlin.test.Test
  * to render anything below its title, so the row's description is the landmark for the hub and the
  * page title is the landmark for the page.
  */
-class SettingsHubTest {
+class SettingsHubTest : RussianUiTest() {
 
     @BeforeTest
     fun isolateSessionStorage() = useInMemorySessionStorageForTesting()

@@ -30,6 +30,7 @@ import com.example.app.components.LogoutIcon
 import com.example.app.components.MenuEntry
 import com.example.app.components.PersonIcon
 import com.example.app.data.Session
+import com.example.app.i18n.strings
 import com.example.app.theme.AppTheme
 
 /**
@@ -52,7 +53,7 @@ fun ProfileScreen(
     val fullName = session.user.fullName?.takeIf { it.isNotBlank() }
 
     AppScaffold(
-        title = "Профиль",
+        title = strings.profileTitle,
         menu = menu,
         onOpenSettings = onOpenSettings,
         onOpenProfile = onOpenProfile,
@@ -92,7 +93,7 @@ fun ProfileScreen(
             }
 
             Spacer(Modifier.height(24.dp))
-            InfoRow(label = "Сервер", value = session.serverUrl)
+            InfoRow(label = strings.profileServer, value = session.serverUrl)
 
             Spacer(Modifier.height(24.dp))
             LogoutRow(onClick = onLogout)
@@ -139,6 +140,6 @@ private fun LogoutRow(onClick: () -> Unit) {
     ) {
         LogoutIcon(tint = AppTheme.Danger)
         Spacer(Modifier.size(8.dp))
-        Text(text = "Выйти", style = AppTheme.ButtonLabel, color = AppTheme.Danger)
+        Text(text = strings.profileLogout, style = AppTheme.ButtonLabel, color = AppTheme.Danger)
     }
 }

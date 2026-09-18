@@ -50,6 +50,7 @@ import com.example.app.diff.DiffPalette
 import com.example.app.diff.DiffViewer
 import com.example.app.diff.FileDiff
 import com.example.app.diff.UnifiedPatchParser
+import com.example.app.i18n.strings
 import com.example.app.json.JsonViewer
 import com.example.app.markdown.MarkdownText
 import com.example.app.theme.AppTheme
@@ -94,13 +95,13 @@ internal fun TaskLinkRow(taskTitle: String?, projectName: String?, onClick: () -
     ) {
         Column(modifier = Modifier.weight(1f).padding(end = 12.dp)) {
             val context = listOfNotNull(
-                "Задача",
+                strings.runTaskWord,
                 projectName?.takeIf { it.isNotBlank() },
             ).joinToString(" · ")
             Text(text = context, style = AppTheme.Label, color = AppTheme.Muted)
             Spacer(Modifier.height(2.dp))
             Text(
-                text = title ?: "Открыть задачу",
+                text = title ?: strings.runOpenTask,
                 style = AppTheme.Body,
                 color = AppTheme.Primary,
                 maxLines = 2,
@@ -128,7 +129,7 @@ internal fun InstructionCard(instruction: RunInstructionDto) {
     var expanded by remember(instruction.body) { mutableStateOf(false) }
     val long = instruction.body.length > INSTRUCTION_FOLD_CHARS
 
-    SectionTitle("Что просили")
+    SectionTitle(strings.runInstructionTitle)
     Spacer(Modifier.height(8.dp))
     Column(
         modifier = Modifier
@@ -138,7 +139,8 @@ internal fun InstructionCard(instruction: RunInstructionDto) {
             .padding(16.dp),
     ) {
         val origin = listOfNotNull(
-            if (instruction.source == "comment") "из комментария" else "из описания задачи",
+            if (instruction.source == "comment") strings.runInstructionFromComment
+            else strings.runInstructionFromTask,
             instruction.authorName?.takeIf { it.isNotBlank() },
             formatTimestamp(instruction.createdAt),
         ).joinToString(" · ")
@@ -149,7 +151,7 @@ internal fun InstructionCard(instruction: RunInstructionDto) {
         if (long) {
             Spacer(Modifier.height(8.dp))
             Text(
-                text = if (expanded) "Свернуть" else "Показать полностью",
+                text = if (expanded) strings.runInstructionCollapse else strings.runInstructionExpand,
                 style = AppTheme.Footnote,
                 color = AppTheme.Accent,
                 modifier = Modifier
@@ -186,7 +188,7 @@ internal fun RunResult(
     // does not open it on the next one shown in the same slot.
     val opened = remember(run.id) { mutableStateMapOf<String, Boolean>() }
 
-    SectionTitle("Результат запуска")
+    SectionTitle(strings.runResultTitle)
     Spacer(Modifier.height(12.dp))
     Column(
         modifier = Modifier
@@ -200,10 +202,10 @@ internal fun RunResult(
         // breakdown that strip has no room for — the in/out/cache split and the price estimate.
         run.usage?.takeIf { totalTokens(it) > 0 }?.let { usage ->
             val parts = buildList {
-                add("${formatTokens(totalTokens(usage))} токенов")
-                add("вход ${formatTokens(usage.inputTokens)}")
-                add("выход ${formatTokens(usage.outputTokens)}")
-                add("кэш ${formatTokens(usage.cacheReadTokens + usage.cacheWriteTokens)}")
+                add(strings.tokensTotal(formatTokens(totalTokens(usage))))
+                add(strings.tokensInput(formatTokens(usage.inputTokens)))
+                add(strings.tokensOutput(formatTokens(usage.outputTokens)))
+                add(strings.tokensCache(formatTokens(usage.cacheReadTokens + usage.cacheWriteTokens)))
                 usage.estimatedCostUsd?.takeIf { it > 0 }?.let { add(formatCostUsd(it)) }
             }
             Text(text = parts.joinToString(" · "), style = AppTheme.Label, color = AppTheme.Muted)
@@ -218,7 +220,7 @@ internal fun RunResult(
 
         if (run.interactions.isNotEmpty()) {
             Spacer(Modifier.height(16.dp))
-            SectionTitle("Вопросы агента")
+            SectionTitle(strings.runQuestionsTitle)
             Spacer(Modifier.height(8.dp))
             Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
                 run.interactions.forEach { interaction ->
@@ -237,7 +239,7 @@ internal fun RunResult(
 
         if (run.stages.isNotEmpty()) {
             Spacer(Modifier.height(16.dp))
-            SectionTitle("Этапы")
+            SectionTitle(strings.runStagesTitle)
             run.stages.forEach { stage ->
                 Spacer(Modifier.height(8.dp))
                 StageCard(stage)
@@ -251,7 +253,7 @@ internal fun RunResult(
         val summary = run.resultSummary?.takeIf { it.isNotBlank() }
         if (summary != null && !summaryRepeatsStages(summary, run.stages)) {
             Spacer(Modifier.height(16.dp))
-            SectionTitle("Итог воркера")
+            SectionTitle(strings.runWorkerSummaryTitle)
             Spacer(Modifier.height(8.dp))
             MarkdownText(text = summary, style = AppTheme.Body, color = AppTheme.Foreground)
         }
@@ -265,7 +267,7 @@ internal fun RunResult(
             Spacer(Modifier.height(16.dp))
             val open = opened[LOG_SECTION] == true
             CollapsibleSection(
-                title = "Лог выполнения",
+                title = strings.runLogTitle,
                 note = logCountLabel(run.logs.size),
                 expanded = open,
                 onToggle = { opened[LOG_SECTION] = !open },
@@ -284,7 +286,7 @@ internal fun RunResult(
             Spacer(Modifier.height(16.dp))
             val open = opened[WORKER_RESULT_SECTION] == true
             CollapsibleSection(
-                title = "Полный ответ воркера",
+                title = strings.runRawResultTitle,
                 note = "JSON",
                 expanded = open,
                 onToggle = { opened[WORKER_RESULT_SECTION] = !open },
@@ -292,7 +294,7 @@ internal fun RunResult(
                 // Worker result schemas may evolve independently. Show the complete JSON the server
                 // persisted rather than silently dropping fields the client does not know yet — as a
                 // tree, because "complete" here regularly means hundreds of lines.
-                JsonViewer(element = result, rootLabel = "результат")
+                JsonViewer(element = result, rootLabel = strings.runRawResultLabel)
             }
         }
     }
@@ -328,15 +330,7 @@ internal fun agentResponse(stage: StageDto): String? = (stage.output as? JsonObj
     ?.takeIf { it.isNotBlank() }
 
 /** "3 строки" — a count a person reads, so the folded log says how much is behind it. */
-internal fun logCountLabel(count: Int): String {
-    val word = when {
-        count % 100 in 11..14 -> "строк"
-        count % 10 == 1 -> "строка"
-        count % 10 in 2..4 -> "строки"
-        else -> "строк"
-    }
-    return "$count $word"
-}
+internal fun logCountLabel(count: Int): String = strings.logLines(count)
 
 /**
  * A section that is a header until it is asked for: the log and the raw worker payload are both
@@ -393,7 +387,7 @@ internal fun DiffSection(diff: DiffDto) {
     // a ten-file patch does not unroll into one endless page.
     val toggled = remember(diff.patch) { mutableStateMapOf<Int, Boolean>() }
 
-    SectionTitle("Изменения")
+    SectionTitle(strings.diffTitle)
     Spacer(Modifier.height(8.dp))
 
     val stats = diff.stats
@@ -402,16 +396,16 @@ internal fun DiffSection(diff: DiffDto) {
     val deletions = stats?.deletions ?: files.sumOf { it.deletions }
     Text(
         text = buildAnnotatedString {
-            append("от ${diff.baseSha?.take(12) ?: "—"} · $fileCount файл(ов), ")
+            append(strings.diffFrom(diff.baseSha?.take(12) ?: "—", fileCount))
             withStyle(SpanStyle(color = DiffPalette.Light.addedText)) { append("+$insertions") }
             append(" ")
             withStyle(SpanStyle(color = DiffPalette.Light.deletedText)) { append("−$deletions") }
             val appliedAt = formatTimestamp(diff.appliedAt)
             append(
                 if (appliedAt != null) {
-                    " · применено $appliedAt, коммит ${diff.appliedCommitSha?.take(12) ?: ""}"
+                    strings.diffApplied(appliedAt, diff.appliedCommitSha?.take(12) ?: "")
                 } else {
-                    " · в репозиторий не отправлено"
+                    strings.diffNotPushed
                 },
             )
         },
@@ -422,7 +416,7 @@ internal fun DiffSection(diff: DiffDto) {
     if (diff.truncated) {
         Spacer(Modifier.height(6.dp))
         Text(
-            text = "Патч обрезан по лимиту размера — показана часть изменений.",
+            text = strings.diffTruncated,
             style = AppTheme.Label,
             color = WarningText,
         )
@@ -430,7 +424,7 @@ internal fun DiffSection(diff: DiffDto) {
 
     if (files.isEmpty() && diff.patch != null) {
         Spacer(Modifier.height(6.dp))
-        Text(text = "Дифф пуст.", style = AppTheme.Label, color = AppTheme.Muted)
+        Text(text = strings.diffEmpty, style = AppTheme.Label, color = AppTheme.Muted)
     }
 
     files.forEachIndexed { index, file ->
@@ -505,15 +499,7 @@ private fun StageCard(stage: StageDto) {
                 modifier = Modifier.weight(1f).padding(end = 12.dp),
             )
             Text(
-                text = when (stage.status) {
-                    "pending" -> "ждёт"
-                    "running" -> "идёт"
-                    "waiting_input" -> "ждёт ответа"
-                    "succeeded" -> "готово"
-                    "failed" -> "ошибка"
-                    "skipped" -> "пропущено"
-                    else -> stage.status
-                },
+                text = strings.stageState(stage.status) ?: stage.status,
                 style = AppTheme.Label,
                 color = if (stage.status == "failed") AppTheme.Danger else AppTheme.Muted,
             )
@@ -525,7 +511,8 @@ private fun StageCard(stage: StageDto) {
         if (usage != null && totalTokens(usage) > 0) {
             Spacer(Modifier.height(4.dp))
             Text(
-                text = listOfNotNull("${formatTokens(totalTokens(usage))} ткн", usage.model).joinToString(" · "),
+                text = listOfNotNull(strings.tokensShort(formatTokens(totalTokens(usage))), usage.model)
+                    .joinToString(" · "),
                 style = AppTheme.Label,
                 color = AppTheme.Muted,
             )
@@ -544,7 +531,7 @@ private fun StageCard(stage: StageDto) {
         } else if (stage.output != null) {
             Spacer(Modifier.height(8.dp))
             // No prose from the agent — whatever the stage did leave behind, foldable.
-            JsonViewer(element = stage.output, rootLabel = "вывод этапа")
+            JsonViewer(element = stage.output, rootLabel = strings.runStageOutputLabel)
         }
     }
 }
@@ -579,7 +566,7 @@ private fun LogTrace(logs: List<LogEntryDto>) {
                 verticalAlignment = Alignment.CenterVertically,
             ) {
                 LogLevelChip(
-                    label = "все",
+                    label = strings.logLevelAll,
                     count = logs.size,
                     color = AppTheme.Muted,
                     selected = selected == null,
@@ -637,13 +624,7 @@ internal fun logLevelCounts(logs: List<LogEntryDto>): List<Pair<String, Int>> {
 }
 
 /** The level as a person reads it; an unknown level keeps whatever the server called it. */
-internal fun logLevelLabel(level: String): String = when (level) {
-    "error" -> "ошибки"
-    "warn" -> "предупреждения"
-    "info" -> "инфо"
-    "debug" -> "отладка"
-    else -> level
-}
+internal fun logLevelLabel(level: String): String = strings.logLevel(level) ?: level
 
 /** The colour a level wears — both as the line's dot and as its chip. */
 private fun logLevelColor(level: String): Color = when (level) {
@@ -745,15 +726,18 @@ internal fun logLineDetail(log: LogEntryDto): String = listOfNotNull(
 ).joinToString(" · ")
 
 /** The word and colour a run's status wears, shared by the badge and the detail page's fact grid. */
-internal fun runStatusPresentation(status: String): Pair<String, Color> = when (status) {
-    "pending" -> "в очереди" to AppTheme.Muted
-    "running" -> "выполняется" to AppTheme.Warning
-    // The one non-terminal state that needs a person: coloured, unlike the other in-flight ones.
-    "waiting_input" -> "ждёт ответа" to AppTheme.Accent
-    "succeeded" -> "успешно" to AppTheme.Success
-    "failed" -> "ошибка" to AppTheme.Danger
-    "cancelled" -> "отменён" to AppTheme.Disabled
-    else -> status to AppTheme.Muted
+internal fun runStatusPresentation(status: String): Pair<String, Color> {
+    val color = when (status) {
+        "pending" -> AppTheme.Muted
+        "running" -> AppTheme.Warning
+        // The one non-terminal state that needs a person: coloured, unlike the other in-flight ones.
+        "waiting_input" -> AppTheme.Accent
+        "succeeded" -> AppTheme.Success
+        "failed" -> AppTheme.Danger
+        "cancelled" -> AppTheme.Disabled
+        else -> AppTheme.Muted
+    }
+    return (strings.runState(status) ?: status) to color
 }
 
 /**

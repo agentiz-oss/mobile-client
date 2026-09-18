@@ -61,6 +61,7 @@ import com.example.app.data.InteractionDto
 import com.example.app.data.LocalStore
 import com.example.app.data.ProposalDto
 import com.example.app.data.Session
+import com.example.app.i18n.strings
 import com.example.app.theme.AppTheme
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
@@ -157,7 +158,7 @@ fun InboxScreen(
         } catch (e: ApiException) {
             error = e.message
         } catch (e: Throwable) {
-            error = "Ошибка сети: ${e.message ?: "неизвестная ошибка"}"
+            error = strings.networkError(e.message)
         } finally {
             refreshing = false
         }
@@ -212,7 +213,7 @@ fun InboxScreen(
             } catch (e: ApiException) {
                 error = e.message
             } catch (e: Throwable) {
-                error = "Ошибка сети: ${e.message ?: "неизвестная ошибка"}"
+                error = strings.networkError(e.message)
             } finally {
                 expandLoading = false
             }
@@ -236,7 +237,7 @@ fun InboxScreen(
             } catch (e: ApiException) {
                 error = e.message
             } catch (e: Throwable) {
-                error = "Ошибка сети: ${e.message ?: "неизвестная ошибка"}"
+                error = strings.networkError(e.message)
             } finally {
                 busyId = null
             }
@@ -271,8 +272,9 @@ fun InboxScreen(
 
     val current = items
     AppScaffold(
-        title = "Входящие",
-        subtitle = current?.count { it.dismissedAt == null }?.takeIf { it > 0 }?.let { "$it требуют действия" },
+        title = strings.inboxTitle,
+        subtitle = current?.count { it.dismissedAt == null }?.takeIf { it > 0 }
+            ?.let(strings::inboxNeedAction),
         menu = menu,
         onOpenSettings = onOpenSettings,
         onOpenProfile = onOpenProfile,
@@ -294,7 +296,7 @@ fun InboxScreen(
 
                 InboxTab.Actionable -> when {
                     current == null && error != null -> RetryState(message = error!!, onRetry = { reloadKey++ })
-                    current == null -> CenterMessage("Загрузка…")
+                    current == null -> CenterMessage(strings.loading)
                     else -> PullToRefresh(
                         refreshing = refreshing,
                         onRefresh = {
@@ -335,7 +337,7 @@ fun InboxScreen(
                                 item(key = "empty") {
                                     Box(modifier = Modifier.fillParentMaxSize(), contentAlignment = Alignment.Center) {
                                         Text(
-                                            text = "Ничего не ждёт вашего участия.",
+                                            text = strings.inboxEmpty,
                                             style = AppTheme.Body,
                                             color = AppTheme.Muted,
                                         )
@@ -351,14 +353,14 @@ fun InboxScreen(
                                 // way to reach something.
                                 SwipeableRow(
                                     start = SwipeAction(
-                                        label = "Уведомления",
+                                        label = strings.inboxSwipeNotifications,
                                         background = AppTheme.Accent,
                                         icon = { tint -> BellIcon(tint, size = 16.dp, muted = row.notify?.push == "off") },
                                         onAction = { expand(row, "notify") },
                                     ),
                                     end = if (row.dismissible && row.dismissedAt == null) {
                                         SwipeAction(
-                                            label = "Не требует действий",
+                                            label = strings.inboxSwipeDismiss,
                                             background = AppTheme.Muted,
                                             icon = { tint -> CheckIcon(tint, size = 16.dp) },
                                             // The same call the button makes, including the local
@@ -460,7 +462,7 @@ private fun HiddenRowsSwitch(count: Int, showing: Boolean, onToggle: () -> Unit)
     ) {
         CheckIcon(AppTheme.Muted, size = 14.dp)
         Text(
-            text = if (showing) "Скрытые показаны — вернуть список" else "Скрытые: $count — показать",
+            text = if (showing) strings.inboxHiddenShown else strings.inboxHiddenCount(count),
             style = AppTheme.Footnote,
             color = AppTheme.Muted,
         )
@@ -477,8 +479,8 @@ private fun InboxTabs(tab: InboxTab, onSelect: (InboxTab) -> Unit) {
                 .padding(horizontal = 16.dp, vertical = 10.dp),
             horizontalArrangement = Arrangement.spacedBy(8.dp),
         ) {
-            InboxTabPill("Требуют действия", tab == InboxTab.Actionable) { onSelect(InboxTab.Actionable) }
-            InboxTabPill("Лента", tab == InboxTab.Feed) { onSelect(InboxTab.Feed) }
+            InboxTabPill(strings.inboxTabActionable, tab == InboxTab.Actionable) { onSelect(InboxTab.Actionable) }
+            InboxTabPill(strings.inboxTabFeed, tab == InboxTab.Feed) { onSelect(InboxTab.Feed) }
         }
         RowDivider()
     }
@@ -625,7 +627,11 @@ internal fun InboxRow(
                 formatRemaining(item.expiresAt)?.let { left ->
                     Spacer(Modifier.height(4.dp))
                     // The run is cancelled when this passes, so it is a consequence, not a footnote.
-                    Text(text = "ответ ждут ещё $left", style = AppTheme.Footnote, color = AppTheme.Warning)
+                    Text(
+                        text = strings.answerAwaitedFor(left),
+                        style = AppTheme.Footnote,
+                        color = AppTheme.Warning,
+                    )
                 }
 
                 // Where this row stands in the notification settings, and the way into them.
@@ -648,7 +654,8 @@ internal fun InboxRow(
                             muted = notify.push == "off",
                         )
                         Text(
-                            text = if (onOpenNotify != null) "${notify.label} · настроить" else notify.label,
+                            text = if (onOpenNotify != null) strings.notifyConfigure(notify.label)
+                            else notify.label,
                             style = AppTheme.Footnote,
                             color = if (notify.push == "off") AppTheme.Danger else AppTheme.Muted,
                             maxLines = 1,
@@ -660,7 +667,7 @@ internal fun InboxRow(
                 item.dismissedAt?.let {
                     Spacer(Modifier.height(4.dp))
                     Text(
-                        text = "скрыто вами",
+                        text = strings.inboxHiddenMark,
                         style = AppTheme.Footnote,
                         color = AppTheme.Muted,
                     )
@@ -695,7 +702,7 @@ internal fun InboxRow(
             Column(modifier = Modifier.fillMaxWidth().padding(start = 16.dp, end = 16.dp, bottom = 16.dp)) {
                 when {
                     initialMode == "notify" && notifyPanel != null -> notifyPanel()
-                    loadingDetail -> Text(text = "Загрузка…", style = AppTheme.Label, color = AppTheme.Muted)
+                    loadingDetail -> Text(text = strings.loading, style = AppTheme.Label, color = AppTheme.Muted)
                     interaction != null -> InteractionCard(
                         interaction = interaction,
                         busy = busy,
@@ -717,7 +724,7 @@ internal fun InboxRow(
                     )
                     // The entity is gone: somebody dealt with it between the list and the tap.
                     else -> Text(
-                        text = "Это уже решено — список сейчас обновится.",
+                        text = strings.inboxAlreadyDecided,
                         style = AppTheme.Label,
                         color = AppTheme.Muted,
                     )

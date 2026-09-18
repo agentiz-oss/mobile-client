@@ -37,6 +37,7 @@ import androidx.compose.ui.unit.dp
 import com.composeunstyled.Text
 import com.example.app.components.AppButton
 import com.example.app.data.AttachmentDto
+import com.example.app.i18n.strings
 import com.example.app.platform.PickedFile
 import com.example.app.theme.AppTheme
 
@@ -60,7 +61,7 @@ internal fun AttachmentGallery(
     if (attachments.isEmpty()) return
 
     Text(
-        text = if (attachments.size == 1) "1 файл" else "${attachments.size} файла(ов)",
+        text = strings.attachmentCount(attachments.size),
         style = AppTheme.Label,
         color = AppTheme.Muted,
     )
@@ -169,8 +170,8 @@ internal fun AttachmentStaging(
     onRemove: (Int) -> Unit,
 ) {
     Row(horizontalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.fillMaxWidth()) {
-        AppButton(text = "Фото", onClick = onPickPhotos, enabled = !busy, modifier = Modifier.weight(1f))
-        AppButton(text = "Файл", onClick = onPickFiles, enabled = !busy, modifier = Modifier.weight(1f))
+        AppButton(text = strings.attachmentPhoto, onClick = onPickPhotos, enabled = !busy, modifier = Modifier.weight(1f))
+        AppButton(text = strings.attachmentFile, onClick = onPickFiles, enabled = !busy, modifier = Modifier.weight(1f))
     }
 
     if (uploadLabel != null) {
@@ -197,7 +198,7 @@ internal fun AttachmentStaging(
                     modifier = Modifier.weight(1f),
                 )
                 Text(
-                    text = "Убрать",
+                    text = strings.attachmentRemove,
                     style = AppTheme.Label,
                     color = if (busy) AppTheme.Disabled else AppTheme.Danger,
                     modifier = Modifier.clickable(enabled = !busy) { onRemove(index) },
@@ -241,11 +242,11 @@ internal fun AttachmentViewer(
                     contentScale = ContentScale.Fit,
                     modifier = Modifier.fillMaxWidth(),
                 )
-                bytes == null -> Text(text = "Загрузка…", style = AppTheme.Body, color = AppTheme.Background)
+                bytes == null -> Text(text = strings.loading, style = AppTheme.Body, color = AppTheme.Background)
                 // A file the app cannot render still deserves an answer: it is on the server and
                 // the agent will get it, which is the only thing the reader actually needs to know.
                 else -> Text(
-                    text = "Этот файл нельзя показать в приложении, но он прикреплён к задаче.",
+                    text = strings.attachmentUnviewable,
                     style = AppTheme.Body,
                     color = AppTheme.Background,
                     textAlign = TextAlign.Center,
@@ -260,8 +261,8 @@ internal fun AttachmentViewer(
             )
             Spacer(Modifier.height(16.dp))
             Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-                AppButton(text = if (busy) "Удаление…" else "Удалить", onClick = onDelete, enabled = !busy)
-                AppButton(text = "Закрыть", onClick = onClose, enabled = !busy)
+                AppButton(text = if (busy) strings.attachmentDeleting else strings.attachmentDelete, onClick = onDelete, enabled = !busy)
+                AppButton(text = strings.close, onClick = onClose, enabled = !busy)
             }
         }
     }
@@ -281,9 +282,6 @@ private fun fileGlyph(attachment: AttachmentDto): String {
     }
 }
 
-internal fun formatBytes(bytes: Long): String = when {
-    bytes < 1024 -> "$bytes Б"
-    bytes < 1024 * 1024 -> "${bytes / 1024} КБ"
-    // One decimal place, without a formatter: common code has no String.format across targets.
-    else -> "${bytes / (1024 * 1024)},${(bytes * 10 / (1024 * 1024)) % 10} МБ"
-}
+// One decimal place and the units are the language's: common code has no String.format across
+// targets, and the decimal separator is a comma in two of the three languages here.
+internal fun formatBytes(bytes: Long): String = strings.bytes(bytes)

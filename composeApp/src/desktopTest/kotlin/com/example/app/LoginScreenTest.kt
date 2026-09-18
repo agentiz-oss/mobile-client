@@ -17,7 +17,7 @@ import com.example.app.data.useInMemorySessionStorageForTesting
 import kotlin.test.BeforeTest
 import kotlin.test.Test
 
-class LoginScreenTest {
+class LoginScreenTest : RussianUiTest() {
 
     /**
      * App() now restores a persisted session at startup. Without this the suite would read the

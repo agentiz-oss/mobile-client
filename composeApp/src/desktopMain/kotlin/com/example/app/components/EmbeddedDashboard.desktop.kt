@@ -7,6 +7,7 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.Alignment
 import com.composeunstyled.Text
+import com.example.app.i18n.strings
 import com.example.app.theme.AppTheme
 import java.awt.Desktop
 import java.net.URI
@@ -25,7 +26,7 @@ actual fun EmbeddedDashboard(url: String, modifier: Modifier) {
     }
     Box(modifier = modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
         Text(
-            text = "Агент открыт в браузере",
+            text = strings.agentOpenedInBrowser,
             style = AppTheme.Body,
             color = AppTheme.Muted,
         )

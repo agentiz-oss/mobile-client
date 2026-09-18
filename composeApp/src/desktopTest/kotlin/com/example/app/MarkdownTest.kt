@@ -22,7 +22,7 @@ import kotlin.test.assertTrue
  * and everything else survives as the characters that were written — an unpaired marker, an
  * identifier with underscores, a fence nobody closed.
  */
-class MarkdownTest {
+class MarkdownTest : RussianUiTest() {
 
     @Test
     fun `plain text is one paragraph and keeps its line breaks`() {

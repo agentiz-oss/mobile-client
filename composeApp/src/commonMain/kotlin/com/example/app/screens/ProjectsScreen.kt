@@ -41,6 +41,7 @@ import com.example.app.data.ApiException
 import com.example.app.data.LocalStore
 import com.example.app.data.ProjectDto
 import com.example.app.data.Session
+import com.example.app.i18n.strings
 import com.example.app.theme.AppTheme
 
 /**
@@ -80,7 +81,7 @@ fun ProjectsScreen(
         } catch (e: ApiException) {
             error = e.message
         } catch (e: Throwable) {
-            error = "Ошибка сети: ${e.message ?: "неизвестная ошибка"}"
+            error = strings.networkError(e.message)
         } finally {
             loading = false
             refreshing = false
@@ -88,14 +89,14 @@ fun ProjectsScreen(
     }
 
     AppScaffold(
-        title = "Проекты",
+        title = strings.projectsTitle,
         subtitle = userLabel,
         menu = menu,
         onOpenSettings = onOpenSettings,
         onOpenProfile = onOpenProfile,
     ) {
         when {
-            loading && projects == null -> CenterMessage("Загрузка проектов…")
+            loading && projects == null -> CenterMessage(strings.projectsLoading)
             error != null && projects == null -> RetryState(message = error!!, onRetry = { reloadKey++ })
             else -> PullToRefresh(
                 refreshing = refreshing,
@@ -129,7 +130,7 @@ fun ProjectsScreen(
                                 contentAlignment = Alignment.Center,
                             ) {
                                 Text(
-                                    text = "У вас пока нет проектов.",
+                                    text = strings.projectsEmpty,
                                     style = AppTheme.Body,
                                     color = AppTheme.Muted,
                                 )
@@ -195,7 +196,7 @@ private fun ProjectCard(project: ProjectDto, onClick: () -> Unit) {
 private fun StatusBadge(active: Boolean) {
     val color = if (active) AppTheme.Primary else AppTheme.Disabled
     Text(
-        text = if (active) "активен" else "выключен",
+        text = if (active) strings.projectActive else strings.projectInactive,
         style = AppTheme.Label,
         color = AppTheme.PrimaryForeground,
         modifier = Modifier
@@ -234,6 +235,6 @@ fun RetryState(message: String, onRetry: () -> Unit) {
     ) {
         Text(text = message, style = AppTheme.Body, color = AppTheme.Danger)
         Spacer(Modifier.height(16.dp))
-        AppButton(text = "Повторить", onClick = onRetry)
+        AppButton(text = strings.retry, onClick = onRetry)
     }
 }

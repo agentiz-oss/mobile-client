@@ -5,6 +5,7 @@ import android.app.NotificationManager
 import android.app.PendingIntent
 import android.content.Intent
 import com.example.app.MainActivity
+import com.example.app.data.initLocalCache
 import com.google.firebase.messaging.FirebaseMessagingService
 import com.google.firebase.messaging.RemoteMessage
 
@@ -34,6 +35,10 @@ class AgentizMessagingService : FirebaseMessagingService() {
     }
 
     private fun show(title: String, body: String, data: Map<String, String>, serverChannelId: String?) {
+        // A push can wake the process with no activity ever having run, so the store the language
+        // preference lives in has not been opened yet. Cheap and idempotent — the activity does the
+        // same call — and without it the channels below would be named in the fallback language.
+        initLocalCache(this)
         createNotificationChannels(this)
         val intent = Intent(this, MainActivity::class.java).apply {
             // The activity is already running in this case; reusing its task is what makes the tap

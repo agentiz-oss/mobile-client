@@ -43,6 +43,7 @@ import com.example.app.data.Session
 import com.example.app.data.SubscriptionWorkerDto
 import com.example.app.data.WorkerDto
 import com.example.app.data.WorkerHarnessDto
+import com.example.app.i18n.strings
 import com.example.app.theme.AppTheme
 import kotlinx.coroutines.delay
 import kotlin.math.roundToInt
@@ -55,9 +56,17 @@ import kotlin.math.roundToInt
 private const val CAPACITY_POLL_MS = 30_000L
 
 /** The two halves of the page. Kept as a type so the tab strip and the body cannot disagree. */
-private enum class CapacityTab(val label: String) {
-    Workers("Воркеры"),
-    Subscriptions("Подписки"),
+private enum class CapacityTab {
+    Workers,
+    Subscriptions,
+    ;
+
+    /** Resolved when the strip renders rather than stored on the constant: a language can change
+     *  while the screen is open, and an enum's constructor argument would be frozen at class init. */
+    val label: String get() = when (this) {
+        Workers -> strings.workersTabWorkers
+        Subscriptions -> strings.workersTabSubscriptions
+    }
 }
 
 /**
@@ -105,7 +114,7 @@ fun WorkersScreen(
         } catch (e: ApiException) {
             error = e.message
         } catch (e: Throwable) {
-            error = "Ошибка сети: ${e.message ?: "неизвестная ошибка"}"
+            error = strings.networkError(e.message)
         } finally {
             refreshing = false
         }
@@ -125,12 +134,13 @@ fun WorkersScreen(
     val loaded = currentWorkers != null && currentSubscriptions != null
 
     AppScaffold(
-        title = "Воркеры",
+        title = strings.workersTitle,
         // What is wrong, in one line, with the thing a person can actually act on first: a login is
         // theirs to fix, an exhausted quota fixes itself.
         subtitle = listOfNotNull(
-            currentWorkers?.count { it.needsLogin }?.takeIf { it > 0 }?.let { "$it ${plural(it, "воркер", "воркера", "воркеров")} без входа" },
-            currentSubscriptions?.count { it.exhausted }?.takeIf { it > 0 }?.let { "$it подписка исчерпана" },
+            currentWorkers?.count { it.needsLogin }?.takeIf { it > 0 }?.let(strings::workersNeedLogin),
+            currentSubscriptions?.count { it.exhausted }?.takeIf { it > 0 }
+                ?.let(strings::workersSubscriptionsExhausted),
         ).takeIf { it.isNotEmpty() }?.joinToString(" · "),
         menu = menu,
         onOpenSettings = onOpenSettings,
@@ -139,7 +149,7 @@ fun WorkersScreen(
     ) {
         when {
             !loaded && error != null -> RetryState(message = error!!, onRetry = { reloadKey++ })
-            !loaded -> CenterMessage("Загрузка воркеров…")
+            !loaded -> CenterMessage(strings.workersLoading)
             else -> PullToRefresh(
                 refreshing = refreshing,
                 onRefresh = {
@@ -192,8 +202,8 @@ fun WorkersScreen(
                             if (visible.isEmpty()) {
                                 item(key = "workers-empty") {
                                     EmptyNote(
-                                        if (currentWorkers!!.isEmpty()) "Ни один воркер не зарегистрирован."
-                                        else "Нет воркеров, которые сейчас могут принять работу.",
+                                        if (currentWorkers!!.isEmpty()) strings.workersNoneRegistered
+                                        else strings.workersNoneAvailable,
                                     )
                                 }
                             }
@@ -204,8 +214,7 @@ fun WorkersScreen(
                             if (currentSubscriptions!!.isEmpty()) {
                                 item(key = "subs-empty") {
                                     EmptyNote(
-                                        "Подписок нет: лимиты появятся, когда воркер впервые отчитается " +
-                                            "об использовании харнесса.",
+                                        strings.workersNoSubscriptions,
                                     )
                                 }
                             }
@@ -287,7 +296,7 @@ private fun WorkerCard(worker: WorkerDto) {
                 // card is tall enough that the harness block saying so is below the fold. Without
                 // this the header reads "на связи" and nothing else — which is exactly how a
                 // logged-out worker looked healthy for a day.
-                if (worker.needsLogin) Badge("нужен вход", AppTheme.Danger)
+                if (worker.needsLogin) Badge(strings.workerNeedsLogin, AppTheme.Danger)
                 ContactBadge(worker.contactState, worker.status)
             }
         }
@@ -295,8 +304,8 @@ private fun WorkerCard(worker: WorkerDto) {
         val meta = listOfNotNull(
             worker.hostname?.takeIf { it.isNotBlank() },
             worker.version?.takeIf { it.isNotBlank() },
-            "до ${worker.maxConcurrentJobs} задач",
-            formatTimestamp(worker.lastSeenAt)?.let { "виден $it" },
+            strings.workerMaxJobs(worker.maxConcurrentJobs),
+            formatTimestamp(worker.lastSeenAt)?.let(strings::workerLastSeen),
         )
         if (meta.isNotEmpty()) {
             Spacer(Modifier.height(6.dp))
@@ -312,7 +321,7 @@ private fun WorkerCard(worker: WorkerDto) {
         if (worker.harnesses.isEmpty()) {
             Spacer(Modifier.height(12.dp))
             Text(
-                text = "Харнессы не привязаны — лимиты не применяются.",
+                text = strings.workerNoHarnesses,
                 style = AppTheme.Body,
                 color = AppTheme.Muted,
             )
@@ -356,18 +365,18 @@ private fun HarnessBlock(harness: WorkerHarnessDto) {
         val subscription = harness.subscription
         Spacer(Modifier.height(6.dp))
         Text(
-            text = subscription?.let { "Подписка: ${it.name}" }
+            text = subscription?.let { strings.workerSubscription(it.name) }
                 // No binding to an account means nothing can close the gate for this harness: it is
                 // worth saying outright, because the rows around it all show a limit.
-                ?: "Подписка не привязана — лимит не отслеживается.",
+                ?: strings.workerSubscriptionUnbound,
             style = AppTheme.Label,
             color = AppTheme.Muted,
         )
 
         val jobs = listOfNotNull(
-            "идёт ${harness.runningJobs}".takeIf { harness.runningJobs > 0 },
-            "в очереди ${harness.queuedJobs}".takeIf { harness.queuedJobs > 0 },
-            harness.maxConcurrent?.let { "не более $it" },
+            strings.workerRunningJobs(harness.runningJobs).takeIf { harness.runningJobs > 0 },
+            strings.workerQueuedJobs(harness.queuedJobs).takeIf { harness.queuedJobs > 0 },
+            harness.maxConcurrent?.let(strings::workerMaxConcurrent),
         )
         if (jobs.isNotEmpty()) {
             Spacer(Modifier.height(4.dp))
@@ -391,7 +400,7 @@ private fun HarnessBlock(harness: WorkerHarnessDto) {
         if (harness.accountMismatch) {
             Spacer(Modifier.height(10.dp))
             Text(
-                text = "Отчёт пришёл от другого аккаунта, чем указан в подписке.",
+                text = strings.workerAccountMismatch,
                 style = AppTheme.Label,
                 color = AppTheme.Danger,
             )
@@ -423,7 +432,7 @@ private fun SubscriptionCard(subscription: HarnessSubscriptionDto) {
             subscription.provider?.takeIf { it.isNotBlank() },
             subscription.authKind?.takeIf { it.isNotBlank() },
             subscription.accountId?.takeIf { it.isNotBlank() },
-            formatTimestamp(subscription.lastSignalAt)?.let { "отчёт $it" },
+            formatTimestamp(subscription.lastSignalAt)?.let(strings::workerReportedAt),
         )
         if (meta.isNotEmpty()) {
             Spacer(Modifier.height(6.dp))
@@ -446,11 +455,11 @@ private fun SubscriptionCard(subscription: HarnessSubscriptionDto) {
         }
 
         Spacer(Modifier.height(14.dp))
-        SectionTitle("Воркеры (${subscription.workers.size})")
+        SectionTitle(strings.subscriptionWorkers(subscription.workers.size))
         if (subscription.workers.isEmpty()) {
             Spacer(Modifier.height(6.dp))
             Text(
-                text = "Ни один воркер не привязан к этой подписке.",
+                text = strings.subscriptionNoWorkers,
                 style = AppTheme.Label,
                 color = AppTheme.Muted,
             )
@@ -482,9 +491,9 @@ private fun SubscriptionWorkerRow(worker: SubscriptionWorkerDto) {
             text = listOfNotNull(
                 // First and in red: from the subscription's side this is the machine that stopped
                 // spending it, and "на связи" alone would say the opposite.
-                "нужен вход".takeIf { worker.authState == "expired" },
+                strings.workerNeedsLogin.takeIf { worker.authState == "expired" },
                 contactLabel(worker.contactState),
-                "идёт ${worker.runningJobs}".takeIf { worker.runningJobs > 0 },
+                strings.workerRunningJobs(worker.runningJobs).takeIf { worker.runningJobs > 0 },
             ).joinToString(" · "),
             style = AppTheme.Label,
             color = if (worker.authState == "expired") AppTheme.Danger else AppTheme.Muted,
@@ -500,7 +509,7 @@ private fun SubscriptionWorkerRow(worker: SubscriptionWorkerDto) {
 private fun WindowList(windows: List<HarnessWindowDto>, observedAt: String?) {
     Spacer(Modifier.height(12.dp))
     if (windows.isEmpty()) {
-        Text(text = "Телеметрия лимитов ещё не приходила.", style = AppTheme.Label, color = AppTheme.Muted)
+        Text(text = strings.subscriptionNoTelemetry, style = AppTheme.Label, color = AppTheme.Muted)
         return
     }
     Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
@@ -512,7 +521,7 @@ private fun WindowList(windows: List<HarnessWindowDto>, observedAt: String?) {
     // stale numbers read as current ones without it.
     formatTimestamp(windows.firstOrNull { it.observedAt != null }?.observedAt ?: observedAt)?.let { at ->
         Spacer(Modifier.height(8.dp))
-        Text(text = "Данные на $at", style = AppTheme.Label, color = AppTheme.Muted)
+        Text(text = strings.subscriptionDataAt(at), style = AppTheme.Label, color = AppTheme.Muted)
     }
 }
 
@@ -545,7 +554,10 @@ private fun WindowRow(window: HarnessWindowDto) {
                 modifier = Modifier.weight(1f).padding(end = 12.dp),
             )
             Text(
-                text = shown?.let { if (remaining) "осталось $it%" else "$it%" } ?: "нет данных",
+                text = shown?.let {
+                    if (remaining) strings.subscriptionRemainingPercent(it)
+                    else strings.subscriptionUsedPercent(it)
+                } ?: strings.subscriptionNoData,
                 style = AppTheme.Label,
                 color = if (used == null) AppTheme.Muted else usageColor(used),
             )
@@ -562,10 +574,14 @@ private fun WindowRow(window: HarnessWindowDto) {
                 // against, and the sessions left in it is what that figure gets read for.
                 val left = formatRemaining(resetsAt)?.let { until ->
                     val sessions = formatFullSessionWindows(resetsAt, window.sessionWindowMinutes)
-                        ?.let { ", ещё $it" } ?: ""
-                    " (осталось $until$sessions)"
+                        ?.let(strings::subscriptionAlsoSessions) ?: ""
+                    strings.subscriptionResetLeft(until, sessions)
                 } ?: ""
-                Text(text = "Обновится $at$left", style = AppTheme.Label, color = AppTheme.Muted)
+                Text(
+                    text = strings.subscriptionResetAt(at, left),
+                    style = AppTheme.Label,
+                    color = AppTheme.Muted,
+                )
             }
         }
     }
@@ -607,15 +623,15 @@ private fun usageColor(percent: Double) = when {
 @Composable
 private fun SubscriptionIdleNote(lastLimitChangeAt: String?) {
     if (lastLimitChangeAt == null) return
-    val idle = formatWaiting(lastLimitChangeAt) ?: "только что"
+    val idle = formatWaiting(lastLimitChangeAt) ?: strings.subscriptionJustNow
     Spacer(Modifier.height(8.dp))
-    Text(text = "Лимиты без изменений $idle", style = AppTheme.Label, color = AppTheme.Muted)
+    Text(text = strings.subscriptionIdle(idle), style = AppTheme.Label, color = AppTheme.Muted)
 }
 
 @Composable
 private fun InactiveWorkersToggle(count: Int, expanded: Boolean, onClick: () -> Unit) {
     Text(
-        text = if (expanded) "Скрыть неактивные ($count)" else "Показать неактивные ($count)",
+        text = if (expanded) strings.workersHideInactive(count) else strings.workersShowInactive(count),
         style = AppTheme.Label,
         color = AppTheme.Foreground,
         modifier = Modifier
@@ -657,9 +673,9 @@ private fun ExhaustedNote(until: String, reason: String?) {
     Text(
         text = listOfNotNull(
             formatTimestamp(until)?.let {
-                val left = formatRemaining(until)?.let { left -> " (осталось $left)" } ?: ""
-                "Лимит закрыт до $it$left"
-            } ?: "Лимит закрыт",
+                val left = formatRemaining(until)?.let(strings::remainingSuffix) ?: ""
+                strings.workerLimitUntil(it, left)
+            } ?: strings.workerLimitClosed,
             reason?.takeIf { it.isNotBlank() },
         ).joinToString(" — "),
         style = AppTheme.Label,
@@ -670,16 +686,16 @@ private fun ExhaustedNote(until: String, reason: String?) {
 /** `available` / `exhausted` / `unauthorized` / `disabled`, exactly as the server decided it. */
 @Composable
 private fun HarnessStateBadge(state: String) {
-    val (label, color) = when (state) {
-        "available" -> "доступен" to AppTheme.Primary
-        "exhausted" -> "лимит исчерпан" to AppTheme.Danger
+    val color = when (state) {
+        "available" -> AppTheme.Primary
+        "exhausted" -> AppTheme.Danger
         // Not a limit: nothing here ends on a clock, which is why it is worded as a demand and not
         // as a state («нужен вход», not «нет авторизации»).
-        "unauthorized" -> "нужен вход" to AppTheme.Danger
-        "disabled" -> "выключен" to AppTheme.Disabled
-        else -> state to AppTheme.Muted
+        "unauthorized" -> AppTheme.Danger
+        "disabled" -> AppTheme.Disabled
+        else -> AppTheme.Muted
     }
-    Badge(label, color)
+    Badge(strings.subscriptionState(state) ?: state, color)
 }
 
 /**
@@ -704,7 +720,7 @@ private fun NeedsLoginNote(harness: WorkerHarnessDto) {
         Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
             KeyIcon(AppTheme.Danger, size = 16.dp)
             Text(
-                text = since?.let { "Вход закончился $it" } ?: "Вход закончился",
+                text = since?.let(strings::workerAuthEndedAt) ?: strings.workerAuthEnded,
                 style = AppTheme.Body,
                 color = AppTheme.Danger,
             )
@@ -715,14 +731,14 @@ private fun NeedsLoginNote(harness: WorkerHarnessDto) {
         }
         Spacer(Modifier.height(6.dp))
         Text(
-            text = "Продлить подписку и войти заново можно только в браузере на самой машине воркера" +
-                if (harness.harnessKey == "claude") " — «claude auth login» под тем пользователем, от которого он работает." else ".",
+            text = if (harness.harnessKey == "claude") strings.workerAuthFixClaude
+            else strings.workerAuthFixOther,
             style = AppTheme.Label,
             color = AppTheme.Foreground,
         )
         Spacer(Modifier.height(4.dp))
         Text(
-            text = "Задачи этого харнесса стоят в очереди и продолжатся сами через пару минут после входа.",
+            text = strings.workerAuthQueueNote,
             style = AppTheme.Label,
             color = AppTheme.Muted,
         )
@@ -737,12 +753,7 @@ private fun NeedsLoginNote(harness: WorkerHarnessDto) {
 private fun ContactBadge(contactState: String, status: String) {
     if (status != "active") {
         Badge(
-            when (status) {
-                "paused" -> "на паузе"
-                "revoked" -> "отозван"
-                "pending" -> "не подключён"
-                else -> status
-            },
+            strings.workerStatusWord(status) ?: status,
             AppTheme.Disabled,
         )
         return
@@ -758,11 +769,7 @@ private fun ContactBadge(contactState: String, status: String) {
     Badge(contactLabel(contactState), color)
 }
 
-private fun contactLabel(contactState: String) = when (contactState) {
-    "online" -> "на связи"
-    "offline" -> "офлайн"
-    else -> "ни разу не выходил на связь"
-}
+private fun contactLabel(contactState: String) = strings.workerContactState(contactState)
 
 @Composable
 private fun Badge(label: String, color: androidx.compose.ui.graphics.Color) {

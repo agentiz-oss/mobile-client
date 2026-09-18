@@ -29,6 +29,7 @@ import com.example.app.data.ApiException
 import com.example.app.data.InteractionDto
 import com.example.app.data.LocalStore
 import com.example.app.data.Session
+import com.example.app.i18n.strings
 import com.example.app.theme.AppTheme
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
@@ -79,7 +80,7 @@ fun RunDetailScreen(
         } catch (e: ApiException) {
             error = e.message
         } catch (e: Throwable) {
-            error = "Ошибка сети: ${e.message ?: "неизвестная ошибка"}"
+            error = strings.networkError(e.message)
         }
     }
 
@@ -97,7 +98,7 @@ fun RunDetailScreen(
             } catch (e: ApiException) {
                 error = e.message
             } catch (e: Throwable) {
-                error = "Ошибка сети: ${e.message ?: "неизвестная ошибка"}"
+                error = strings.networkError(e.message)
             } finally {
                 answeringId = null
             }
@@ -125,7 +126,7 @@ fun RunDetailScreen(
 
     val current = run
     AppScaffold(
-        title = if (runNumber != null) "Запуск #$runNumber" else "Запуск",
+        title = if (runNumber != null) strings.runNumberTitle(runNumber) else strings.runFallbackTitle,
         menu = menu,
         onOpenSettings = onOpenSettings,
         onOpenProfile = onOpenProfile,
@@ -133,7 +134,7 @@ fun RunDetailScreen(
     ) {
         when {
             current == null && error != null -> RetryState(message = error!!, onRetry = { reloadKey++ })
-            current == null -> CenterMessage("Загрузка запуска…")
+            current == null -> CenterMessage(strings.runLoading)
             else -> Column(
                 modifier = Modifier
                     .fillMaxSize()
@@ -170,12 +171,12 @@ fun RunDetailScreen(
                     FactGrid(
                         facts = buildList {
                             val (label, color) = runStatusPresentation(current.status)
-                            add(Fact("Статус", label, color))
+                            add(Fact(strings.runFactStatus, label, color))
                             formatDuration(current.startedAt, current.finishedAt)?.let {
-                                add(Fact("Длительность", it))
+                                add(Fact(strings.runFactDuration, it))
                             }
                             current.usage?.let(::totalTokens)?.takeIf { it > 0 }?.let {
-                                add(Fact("Токены", formatTokens(it)))
+                                add(Fact(strings.runFactTokens, formatTokens(it)))
                             }
                         },
                     )

@@ -4,6 +4,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.SideEffect
 import androidx.compose.ui.Modifier
+import com.example.app.i18n.strings
 
 /**
  * Compose for web is canvas-based here, so an actual HTML iframe is layered over the Assistant
@@ -12,8 +13,11 @@ import androidx.compose.ui.Modifier
 @Composable
 actual fun EmbeddedDashboard(url: String, modifier: Modifier) {
     val drawerOpen = LocalDrawerProgress.current > 0f
-    DisposableEffect(url) {
-        appendDashboardFrame(url)
+    // The frame's accessible name, resolved here rather than inside the `js()` body: a Kotlin/Wasm
+    // `js()` block is a compile-time constant and cannot interpolate anything.
+    val title = strings.agentTitle
+    DisposableEffect(url, title) {
+        appendDashboardFrame(url, title)
         onDispose {
             removeDashboardFrame()
         }
@@ -23,13 +27,13 @@ actual fun EmbeddedDashboard(url: String, modifier: Modifier) {
     }
 }
 
-private fun appendDashboardFrame(url: String) {
+private fun appendDashboardFrame(url: String, title: String) {
     js("""
         (() => {
             const frame = document.createElement('iframe');
             frame.id = 'agentiz-dashboard-frame';
             frame.src = url;
-            frame.title = 'Диалог с агентом';
+            frame.title = title;
             // Size from the fixed-position containing viewport instead of `vh`: mobile browsers
             // change their visual viewport when the URL bar appears, which otherwise leaves a
             // white strip below the dashboard.

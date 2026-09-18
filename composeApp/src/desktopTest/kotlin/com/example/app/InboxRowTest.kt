@@ -23,7 +23,7 @@ import kotlin.test.assertNull
  * Every word on the row except the age is spelled by the server (`lib/inboxItems.ts`), so these
  * tests are about the layout choosing to show them, not about their wording.
  */
-class InboxRowTest {
+class InboxRowTest : RussianUiTest() {
 
     private val review = InboxItemDto(
         id = "proposal:p1",

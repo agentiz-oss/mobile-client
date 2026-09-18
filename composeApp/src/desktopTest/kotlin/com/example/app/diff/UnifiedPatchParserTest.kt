@@ -12,7 +12,7 @@ import kotlin.test.assertTrue
  * a size-capped patch cut mid-hunk, CRLF content, quoted non-ASCII paths, and the `-- ` mail
  * signature of `git format-patch` output, which is one dash away from a deleted line.
  */
-class UnifiedPatchParserTest {
+class UnifiedPatchParserTest : com.example.app.RussianUiTest() {
 
     private fun patchOf(vararg lines: String) = lines.joinToString("\n")
 

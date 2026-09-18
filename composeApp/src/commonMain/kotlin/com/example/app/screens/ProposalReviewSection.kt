@@ -22,6 +22,7 @@ import com.composeunstyled.Text
 import com.example.app.components.AppButton
 import com.example.app.components.AppTextField
 import com.example.app.data.ProposalDto
+import com.example.app.i18n.strings
 import com.example.app.theme.AppTheme
 
 /**
@@ -67,19 +68,20 @@ fun ProposalReviewSection(
     ) {
         SectionTitle(
             when (proposal.status) {
-                "push_failed" -> "Push не прошёл — решите, что дальше"
-                "reset_failed" -> "Сброс не прошёл — можно повторить"
-                else -> "Изменения ждут ревью"
+                "push_failed" -> strings.proposalTitlePushFailed
+                "reset_failed" -> strings.proposalTitleResetFailed
+                else -> strings.proposalTitleWaiting
             },
         )
         Spacer(Modifier.height(8.dp))
         val summaryLine = listOfNotNull(
-            "Ревизия ${proposal.revision}",
+            strings.proposalRevision(proposal.revision),
             proposal.diff?.let { diff ->
                 val stats = diff.stats
-                if (stats != null) "${stats.files} файл(ов), +${stats.insertions}/−${stats.deletions}" else "${diff.operations} операций"
+                if (stats != null) strings.proposalFileStats(stats.files, stats.insertions, stats.deletions)
+                else strings.proposalOperations(diff.operations)
             },
-            proposal.targetBranch?.takeIf { it.isNotBlank() }?.let { "ветка $it" },
+            proposal.targetBranch?.takeIf { it.isNotBlank() }?.let(strings::proposalBranch),
         ).joinToString(" · ")
         Text(text = summaryLine, style = AppTheme.Label, color = AppTheme.Muted)
         proposal.lastError?.takeIf { it.isNotBlank() }?.let {
@@ -91,7 +93,7 @@ fun ProposalReviewSection(
         when (mode) {
             "approve" -> {
                 AppTextField(
-                    label = "Сообщение коммита",
+                    label = strings.proposalCommitMessage,
                     value = commitMessage,
                     onValueChange = { commitMessage = it },
                     minLines = 2,
@@ -99,7 +101,7 @@ fun ProposalReviewSection(
                 if (proposal.targetMode == "new") {
                     Spacer(Modifier.height(8.dp))
                     AppTextField(
-                        label = "Ветка",
+                        label = strings.proposalBranchLabel,
                         value = targetBranch,
                         onValueChange = { targetBranch = it },
                     )
@@ -107,7 +109,7 @@ fun ProposalReviewSection(
                 Spacer(Modifier.height(12.dp))
                 Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
                     AppButton(
-                        text = if (busy) "Отправляется…" else "Закоммитить и запушить",
+                        text = if (busy) strings.sending else strings.proposalPush,
                         onClick = {
                             onApprove(
                                 proposal.revision,
@@ -117,32 +119,33 @@ fun ProposalReviewSection(
                         },
                         enabled = !busy,
                     )
-                    AppButton(text = "Назад", onClick = { mode = null }, enabled = !busy)
+                    AppButton(text = strings.back, onClick = { mode = null }, enabled = !busy)
                 }
             }
             "reject" -> {
                 Text(
-                    text = "Отклонить ревизию и сбросить воркспейс? Наработки этой ревизии будут удалены с воркера.",
+                    text = strings.proposalRejectConfirm,
                     style = AppTheme.Body,
                     color = AppTheme.Foreground,
                 )
                 Spacer(Modifier.height(12.dp))
                 Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
                     AppButton(
-                        text = if (busy) "Отправляется…" else "Да, отклонить",
+                        text = if (busy) strings.sending else strings.proposalRejectSubmit,
                         onClick = { onReject(proposal.revision) },
                         enabled = !busy,
                     )
-                    AppButton(text = "Назад", onClick = { mode = null }, enabled = !busy)
+                    AppButton(text = strings.back, onClick = { mode = null }, enabled = !busy)
                 }
             }
             else -> Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
                 if (canApprove) {
-                    AppButton(text = "Одобрить…", onClick = { mode = "approve" }, enabled = !busy)
+                    AppButton(text = strings.proposalApprove, onClick = { mode = "approve" }, enabled = !busy)
                 }
                 if (canReject) {
                     AppButton(
-                        text = if (proposal.status == "reset_failed") "Повторить сброс…" else "Отклонить…",
+                        text = if (proposal.status == "reset_failed") strings.proposalRejectRetry
+                        else strings.proposalReject,
                         onClick = { mode = "reject" },
                         enabled = !busy,
                     )

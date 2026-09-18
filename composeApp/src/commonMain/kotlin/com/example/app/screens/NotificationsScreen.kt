@@ -42,6 +42,7 @@ import com.example.app.data.NotificationPolicyDoc
 import com.example.app.data.NotificationPolicyDto
 import com.example.app.data.ProjectDto
 import com.example.app.data.Session
+import com.example.app.i18n.strings
 import com.example.app.theme.AppTheme
 import kotlinx.coroutines.launch
 import kotlinx.serialization.json.JsonObject
@@ -87,7 +88,7 @@ fun NotificationsScreen(
         } catch (e: ApiException) {
             error = e.message
         } catch (e: Throwable) {
-            error = "Ошибка сети: ${e.message ?: "неизвестная ошибка"}"
+            error = strings.networkError(e.message)
         }
     }
 
@@ -107,7 +108,7 @@ fun NotificationsScreen(
                 error = e.message
                 reloadKey++
             } catch (e: Throwable) {
-                error = "Ошибка сети: ${e.message ?: "неизвестная ошибка"}"
+                error = strings.networkError(e.message)
                 reloadKey++
             } finally {
                 saving = false
@@ -117,8 +118,8 @@ fun NotificationsScreen(
 
     val current = policy
     AppScaffold(
-        title = "Уведомления",
-        subtitle = if (saving) "Сохраняется…" else null,
+        title = strings.notificationsTitle,
+        subtitle = if (saving) strings.notificationsSaving else null,
         menu = menu,
         onOpenSettings = onOpenSettings,
         onOpenProfile = onOpenProfile,
@@ -126,7 +127,7 @@ fun NotificationsScreen(
     ) {
         when {
             current == null && error != null -> RetryState(message = error!!, onRetry = { reloadKey++ })
-            current == null -> CenterMessage("Загрузка настроек…")
+            current == null -> CenterMessage(strings.notificationsLoading)
             else -> Column(
                 modifier = Modifier
                     .fillMaxSize()
@@ -137,22 +138,26 @@ fun NotificationsScreen(
                 error?.let { Text(text = it, style = AppTheme.Label, color = AppTheme.Danger) }
                 if (current.shadowedByEnvironment) {
                     Text(
-                        text = "Политика задана переменной окружения на сервере — правки отсюда сохранятся, но не подействуют, пока переменную не уберут.",
+                        text = strings.notificationsEnvPinned,
                         style = AppTheme.Label,
                         color = AppTheme.Danger,
                     )
                 }
 
                 Text(
-                    text = "Лента активностей пишется всегда; здесь выключается только доставка — пуш на телефон и колокольчик в панели.",
+                    text = strings.notificationsDeliveryOnly,
                     style = AppTheme.Label,
                     color = AppTheme.Muted,
                 )
 
-                SectionTitle("Общие правила")
+                SectionTitle(strings.notificationsGeneralRules)
                 ScopeCard(
-                    title = "Для всех проектов",
-                    summary = scopeSummary(current.defaults, muteLabel = "всё отключено", emptyLabel = "по умолчанию"),
+                    title = strings.notificationsAllProjects,
+                    summary = scopeSummary(
+                        current.defaults,
+                        muteLabel = strings.scopeMuteAll,
+                        emptyLabel = strings.scopeDefault,
+                    ),
                     muted = NotificationPolicyDoc.isMuted(current.defaults),
                 ) {
                     PolicyMatrix(
@@ -164,10 +169,10 @@ fun NotificationsScreen(
                 }
 
                 Spacer(Modifier.height(4.dp))
-                SectionTitle("Проекты")
+                SectionTitle(strings.notificationsProjects)
                 if (projects.isEmpty()) {
                     Text(
-                        text = "Проектов пока нет — настраивать нечего.",
+                        text = strings.notificationsNoProjects,
                         style = AppTheme.Label,
                         color = AppTheme.Muted,
                     )
@@ -177,7 +182,11 @@ fun NotificationsScreen(
                         val muted = NotificationPolicyDoc.isMuted(projectScope)
                         ScopeCard(
                             title = project.name,
-                            summary = scopeSummary(projectScope, muteLabel = "отключены", emptyLabel = "как в общих"),
+                            summary = scopeSummary(
+                                projectScope,
+                                muteLabel = strings.scopeMuteProject,
+                                emptyLabel = strings.scopeInherit,
+                            ),
                             muted = muted,
                         ) {
                             MuteRow(
@@ -215,9 +224,9 @@ private fun scopeSummary(scope: JsonObject, muteLabel: String, emptyLabel: Strin
     val rules = scope.keys.count { it != "mute" }
     val muted = NotificationPolicyDoc.isMuted(scope)
     return when {
-        muted && rules > 0 -> "$muteLabel, кроме $rules"
+        muted && rules > 0 -> strings.scopeSummaryMutedExcept(muteLabel, rules)
         muted -> muteLabel
-        rules > 0 -> "своих правил: $rules"
+        rules > 0 -> strings.scopeSummaryRules(rules)
         else -> emptyLabel
     }
 }
@@ -295,9 +304,9 @@ private fun MuteRow(muted: Boolean, onToggle: () -> Unit) {
         horizontalArrangement = Arrangement.SpaceBetween,
     ) {
         Column(modifier = Modifier.weight(1f).padding(end = 8.dp)) {
-            Text(text = "Отключить всё по проекту", style = AppTheme.Body, color = AppTheme.Foreground)
+            Text(text = strings.notificationsMuteProject, style = AppTheme.Body, color = AppTheme.Foreground)
             Text(
-                text = "Кроме типов, для которых ниже выбрано своё значение",
+                text = strings.notificationsMuteExcept,
                 style = AppTheme.Label,
                 color = AppTheme.Muted,
                 maxLines = 2,
@@ -306,7 +315,7 @@ private fun MuteRow(muted: Boolean, onToggle: () -> Unit) {
         }
         PolicyChip(
             prefix = "",
-            label = if (muted) "отключены" else "включены",
+            label = if (muted) strings.scopeDisabled else strings.scopeEnabled,
             emphasized = muted,
             onClick = onToggle,
         )
@@ -325,10 +334,10 @@ private fun nextValue(currentValue: String?, channel: String, allowInherit: Bool
 }
 
 private fun labelFor(value: String?): String = when (value) {
-    "on" -> "вкл"
-    "silent" -> "тихо"
-    "off" -> "выкл"
-    else -> "как в общих"
+    "on" -> strings.channelOn
+    "silent" -> strings.channelSilent
+    "off" -> strings.channelOff
+    else -> strings.channelInherit
 }
 
 /**

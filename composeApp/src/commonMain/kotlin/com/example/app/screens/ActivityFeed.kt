@@ -37,6 +37,7 @@ import com.example.app.data.ActivityDto
 import com.example.app.data.AgentizApi
 import com.example.app.data.ApiException
 import com.example.app.data.Session
+import com.example.app.i18n.strings
 import com.example.app.markdown.markdownToPlainText
 import com.example.app.theme.AppTheme
 import kotlinx.coroutines.launch
@@ -86,7 +87,7 @@ fun ActivityFeed(
         } catch (e: ApiException) {
             error = e.message
         } catch (e: Throwable) {
-            error = "Ошибка сети: ${e.message ?: "неизвестная ошибка"}"
+            error = strings.networkError(e.message)
         } finally {
             refreshing = false
         }
@@ -105,7 +106,7 @@ fun ActivityFeed(
                 items = items + page.items.filter { it.id !in known }
                 nextBefore = page.nextBefore
             } catch (e: Throwable) {
-                error = e.message ?: "Ошибка сети"
+                error = e.message ?: strings.networkErrorShort
             } finally {
                 loadingMore = false
             }
@@ -116,7 +117,7 @@ fun ActivityFeed(
 
         when {
             !loaded && error != null -> RetryState(message = error!!, onRetry = { reloadKey++ })
-            !loaded -> CenterMessage("Загрузка активностей…")
+            !loaded -> CenterMessage(strings.activitiesLoading)
             else -> PullToRefresh(
                 refreshing = refreshing,
                 onRefresh = {
@@ -137,7 +138,7 @@ fun ActivityFeed(
                     if (items.isEmpty()) {
                         item(key = "feed-empty") {
                             Box(modifier = Modifier.fillMaxWidth(), contentAlignment = Alignment.Center) {
-                                Text(text = "Пока ничего не происходило.", style = AppTheme.Body, color = AppTheme.Muted)
+                                Text(text = strings.activitiesEmpty, style = AppTheme.Body, color = AppTheme.Muted)
                             }
                         }
                     }
@@ -158,7 +159,7 @@ fun ActivityFeed(
                         item(key = "load-more") {
                             Box(modifier = Modifier.fillMaxWidth(), contentAlignment = Alignment.Center) {
                                 AppButton(
-                                    text = if (loadingMore) "Загружается…" else "Показать ещё",
+                                    text = if (loadingMore) strings.activitiesLoadingMore else strings.activitiesShowMore,
                                     onClick = ::loadMore,
                                     enabled = !loadingMore,
                                 )

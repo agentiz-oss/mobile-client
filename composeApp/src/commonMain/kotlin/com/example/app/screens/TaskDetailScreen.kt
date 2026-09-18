@@ -57,6 +57,7 @@ import com.example.app.data.RunTaskRequest
 import com.example.app.data.Session
 import com.example.app.data.TaskDetailDto
 import com.example.app.data.TaskDto
+import com.example.app.i18n.strings
 import com.example.app.platform.PickedFile
 import com.example.app.platform.rememberFilePicker
 import com.example.app.markdown.MarkdownText
@@ -145,7 +146,7 @@ fun TaskDetailScreen(
         } catch (e: ApiException) {
             error = e.message
         } catch (e: Throwable) {
-            error = "Ошибка сети: ${e.message ?: "неизвестная ошибка"}"
+            error = strings.networkError(e.message)
         }
     }
 
@@ -185,7 +186,7 @@ fun TaskDetailScreen(
             } catch (e: ApiException) {
                 error = e.message
             } catch (e: Throwable) {
-                error = "Ошибка сети: ${e.message ?: "неизвестная ошибка"}"
+                error = strings.networkError(e.message)
             } finally {
                 busy = false
             }
@@ -224,7 +225,7 @@ fun TaskDetailScreen(
             } catch (e: ApiException) {
                 error = e.message
             } catch (e: Throwable) {
-                error = "Ошибка сети: ${e.message ?: "неизвестная ошибка"}"
+                error = strings.networkError(e.message)
             } finally {
                 busy = false
             }
@@ -247,7 +248,7 @@ fun TaskDetailScreen(
         scope.launch {
             try {
                 files.forEachIndexed { index, file ->
-                    uploadLabel = "Загрузка ${index + 1} из ${files.size}: ${file.fileName}"
+                    uploadLabel = strings.attachmentUploading(index + 1, files.size, file.fileName)
                     api.uploadAttachment(session.token, taskId, file.fileName, file.mimeType, file.bytes)
                 }
                 commentFiles.clear()
@@ -260,7 +261,7 @@ fun TaskDetailScreen(
             } catch (e: ApiException) {
                 error = e.message
             } catch (e: Throwable) {
-                error = "Ошибка сети: ${e.message ?: "неизвестная ошибка"}"
+                error = strings.networkError(e.message)
             } finally {
                 uploadLabel = null
                 busy = false
@@ -283,7 +284,7 @@ fun TaskDetailScreen(
             } catch (e: ApiException) {
                 error = e.message
             } catch (e: Throwable) {
-                error = "Ошибка сети: ${e.message ?: "неизвестная ошибка"}"
+                error = strings.networkError(e.message)
             } finally {
                 answeringId = null
             }
@@ -303,7 +304,7 @@ fun TaskDetailScreen(
                 error = e.message
                 cancellingRunId = null
             } catch (e: Throwable) {
-                error = "Ошибка сети: ${e.message ?: "неизвестная ошибка"}"
+                error = strings.networkError(e.message)
                 cancellingRunId = null
             } finally {
                 busy = false
@@ -320,7 +321,7 @@ fun TaskDetailScreen(
     // inside the scrolling column — an overlay inside the scroll would scroll away with the page.
     Box(modifier = Modifier.fillMaxSize()) {
         AppScaffold(
-            title = current?.task?.title ?: "Задача",
+            title = current?.task?.title ?: strings.taskFallbackTitle,
             subtitle = current?.task?.externalId?.takeIf { it.isNotBlank() },
             menu = menu,
             onOpenSettings = onOpenSettings,
@@ -329,7 +330,7 @@ fun TaskDetailScreen(
         ) {
             when {
                 current == null && error != null -> RetryState(message = error!!, onRetry = { reloadKey++ })
-                current == null -> CenterMessage("Загрузка задачи…")
+                current == null -> CenterMessage(strings.taskLoading)
                 else -> {
                     // One requester per run, keyed by id, shared between the quick-jump links above and
                     // the history cards below — a link asks the requester for the card that owns the
@@ -404,9 +405,9 @@ fun TaskDetailScreen(
                         AppButton(
                             text = when {
                                 busy -> "…"
-                                current.task.status in ACTIVE_TASK_STATES -> "Выполняется…"
-                                current.latestRun == null -> "Запустить пайплайн"
-                                else -> "Запустить ещё раз"
+                                current.task.status in ACTIVE_TASK_STATES -> strings.taskRunning
+                                current.latestRun == null -> strings.taskRunPipeline
+                                else -> strings.taskRunAgain
                             },
                             onClick = ::runPipeline,
                             enabled = !busy && current.task.status !in ACTIVE_TASK_STATES,
@@ -420,8 +421,8 @@ fun TaskDetailScreen(
                             AppButton(
                                 text = when {
                                     busy -> "…"
-                                    cancelling -> "Остановка запрошена…"
-                                    else -> "Остановить запуск"
+                                    cancelling -> strings.taskStopRequested
+                                    else -> strings.taskStopRun
                                 },
                                 onClick = ::cancelPipeline,
                                 enabled = !busy && !cancelling,
@@ -443,10 +444,10 @@ fun TaskDetailScreen(
                         }
 
                         Spacer(Modifier.height(24.dp))
-                        SectionTitle("Обсуждение")
+                        SectionTitle(strings.taskDiscussion)
                         Spacer(Modifier.height(12.dp))
                         if (runList.isEmpty() && current.comments.isEmpty()) {
-                            Text(text = "Пока нет комментариев.", style = AppTheme.Body, color = AppTheme.Muted)
+                            Text(text = strings.taskNoComments, style = AppTheme.Body, color = AppTheme.Muted)
                         } else {
                             // Runs and comments used to sit in two separate lists — a "Запуски" block
                             // above the discussion — which hid the actual back-and-forth: an agent's
@@ -463,10 +464,10 @@ fun TaskDetailScreen(
 
                         Spacer(Modifier.height(20.dp))
                         AppTextField(
-                            label = "Новый комментарий",
+                            label = strings.taskCommentLabel,
                             value = comment,
                             onValueChange = { comment = it },
-                            placeholder = "Написать…",
+                            placeholder = strings.taskCommentPlaceholder,
                             enabled = !busy,
                             imeAction = ImeAction.Done,
                             // Comments here are replies to an agent's report, not one-liners.
@@ -488,8 +489,8 @@ fun TaskDetailScreen(
                             text = when {
                                 busy -> "…"
                                 comment.isBlank() && commentFiles.isNotEmpty() ->
-                                    if (commentFiles.size == 1) "Прикрепить файл" else "Прикрепить файлы"
-                                else -> "Отправить"
+                                    strings.taskCommentAttach(commentFiles.size)
+                                else -> strings.taskCommentSend
                             },
                             onClick = ::submitComment,
                             enabled = !busy && (comment.isNotBlank() || commentFiles.isNotEmpty()),
@@ -540,7 +541,7 @@ private fun TaskSummary(
         ) {
             TaskStatusBadge(task.status)
             Text(
-                text = if (task.runCount == 1) "1 запуск" else "${task.runCount} запусков",
+                text = strings.taskRunCount(task.runCount),
                 style = AppTheme.Label,
                 color = AppTheme.Muted,
             )
@@ -578,7 +579,7 @@ private fun RunQuickLinks(
     requesters: Map<String, BringIntoViewRequester>,
     scope: CoroutineScope,
 ) {
-    SectionTitle("Перейти к запуску")
+    SectionTitle(strings.taskGoToRun)
     Spacer(Modifier.height(8.dp))
     Row(
         modifier = Modifier
@@ -589,7 +590,7 @@ private fun RunQuickLinks(
         runs.forEachIndexed { index, run ->
             val number = runs.size - index
             Text(
-                text = "Запуск #$number",
+                text = strings.taskRunNumber(number),
                 style = AppTheme.Label,
                 color = AppTheme.Primary,
                 modifier = Modifier
@@ -673,7 +674,7 @@ private fun RunTimelineRow(
     ) {
         Column(modifier = Modifier.weight(1f)) {
             Row(verticalAlignment = Alignment.CenterVertically) {
-                Text(text = "Запуск #$number", style = AppTheme.Label, color = AppTheme.Foreground)
+                Text(text = strings.taskRunNumber(number), style = AppTheme.Label, color = AppTheme.Foreground)
                 val timestamp = formatTimestamp(run.startedAt)
                 if (timestamp != null) {
                     Text(text = " · $timestamp", style = AppTheme.Label, color = AppTheme.Muted)
@@ -706,9 +707,9 @@ private fun CommentCard(comment: CommentDto) {
     // The author kind is the one thing a reader scans for, so it gets the accent colour rather
     // than the body text: agent reports and human replies must not look alike.
     val (kindLabel, kindColor) = when (comment.authorKind) {
-        "agent" -> "агент" to AppTheme.Primary
-        "system" -> "система" to AppTheme.Muted
-        else -> "человек" to AppTheme.Foreground
+        "agent" -> strings.authorAgent to AppTheme.Primary
+        "system" -> strings.authorSystem to AppTheme.Muted
+        else -> strings.authorHuman to AppTheme.Foreground
     }
     Column(
         modifier = Modifier

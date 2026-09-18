@@ -19,7 +19,7 @@ import kotlin.test.assertTrue
  * what the answer sent back looks like. The server validates the answer against the same schema, so
  * everything asserted here is about not misrepresenting the question to the person answering it.
  */
-class InteractionFormTest {
+class InteractionFormTest : RussianUiTest() {
 
     private fun interaction(schema: String) = InteractionDto(
         id = "int-1",

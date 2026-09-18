@@ -18,6 +18,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.IntOffset
 import com.example.app.components.MenuEntry
+import com.example.app.i18n.AppLocale
 import com.example.app.data.AgentizApi
 import com.example.app.data.ProjectDto
 import com.example.app.data.Session
@@ -26,6 +27,7 @@ import com.example.app.data.clearSession
 import com.example.app.data.loadSession
 import com.example.app.data.saveSession
 import com.example.app.data.ActivitySummaryDto
+import com.example.app.i18n.strings
 import com.example.app.screens.InboxScreen
 import com.example.app.screens.InboxTab
 import com.example.app.screens.LoginScreen
@@ -163,8 +165,10 @@ private fun Destination.project(): ProjectDto? = when (this) {
  */
 @Composable
 fun App() {
-    // Restored once, at the first composition, rather than in an effect: doing it here means the
-    // very first frame is already the right screen, with no login flash before it.
+    // Both resolved once, at the first composition rather than in an effect, so the very first
+    // frame is already the right screen in the right language — no login flash, and no paragraph
+    // rendered in one language and repainted in another a moment later.
+    remember { AppLocale.start() }
     var session by remember { mutableStateOf(loadSession()) }
     var destination by remember { mutableStateOf<Destination>(Destination.Projects) }
     var navDirection by remember { mutableStateOf(NavDirection.Forward) }
@@ -206,6 +210,12 @@ fun App() {
     // logout so nothing is left rendering in the previous user's zone — with none set the screens
     // fall back to this device's own offset rather than to UTC.
     ViewerTime.utcOffsetMinutes = current?.user?.utcOffsetMinutes
+    // The language comes from the same place and for the same reason, with two differences. It is
+    // applied in an effect rather than here, because the language is Compose state that the whole
+    // tree reads and writing it mid-composition is how a screen ends up half-repainted; and signing
+    // out does *not* put the app back into the device's language — the person holding the phone has
+    // not changed, and the login screen they land on is the one they were just reading.
+    LaunchedEffect(current?.user?.locale) { AppLocale.applyProfile(current?.user?.locale) }
     if (current == null) {
         LoginScreen(onLoggedIn = {
             saveSession(it)
@@ -290,7 +300,10 @@ fun App() {
                 if (taskId != null && runId != null) {
                     // The event lives on a run's page — a review, a failed push, a finished run.
                     Destination.Run(
-                        project = ProjectDto(id = route.projectId ?: "", name = route.projectName ?: "Проект"),
+                        project = ProjectDto(
+                            id = route.projectId ?: "",
+                            name = route.projectName ?: strings.projectFallbackName,
+                        ),
                         taskId = taskId,
                         runId = runId,
                         runNumber = null,
@@ -341,7 +354,7 @@ fun App() {
     val menu = buildList {
         add(
             MenuEntry(
-                label = "Проекты",
+                label = strings.menuProjects,
                 onClick = { goBack(Destination.Projects) },
                 enabled = destination !is Destination.Projects,
             ),
@@ -354,7 +367,7 @@ fun App() {
         if (project != null) {
             add(
                 MenuEntry(
-                    label = "Задачи: ${project.name}",
+                    label = strings.menuTasksOf(project.name),
                     onClick = { goBack(Destination.Tasks(project)) },
                     enabled = destination !is Destination.Tasks,
                 ),
@@ -362,14 +375,14 @@ fun App() {
         }
         add(
             MenuEntry(
-                label = if (activeRuns > 0) "Запуски ($activeRuns)" else "Запуски",
+                label = if (activeRuns > 0) strings.menuRunsCount(activeRuns) else strings.menuRuns,
                 onClick = { go(Destination.Runs(destination)) },
                 enabled = destination !is Destination.Runs,
             ),
         )
         add(
             MenuEntry(
-                label = if (actionable > 0) "Входящие ($actionable)" else "Входящие",
+                label = if (actionable > 0) strings.menuInboxCount(actionable) else strings.menuInbox,
                 onClick = { go(Destination.Inbox(destination)) },
                 enabled = destination !is Destination.Inbox,
             ),
@@ -380,7 +393,7 @@ fun App() {
                 // with it, and until it is named here the only way to find out is to open the
                 // screen and scroll. Counted apart from «Входящие»: that number is what waits on
                 // *this* person inside a project, this one is the installation's plumbing.
-                label = if (workerAlerts > 0) "Воркеры ($workerAlerts)" else "Воркеры",
+                label = if (workerAlerts > 0) strings.menuWorkersCount(workerAlerts) else strings.menuWorkers,
                 onClick = { go(Destination.Workers(destination)) },
                 enabled = destination !is Destination.Workers,
                 danger = workerAlerts > 0,
@@ -388,7 +401,7 @@ fun App() {
         )
         add(
             MenuEntry(
-                label = "Агент",
+                label = strings.menuAgent,
                 onClick = ::openAgent,
                 enabled = destination !is Destination.Agent,
             ),
@@ -506,12 +519,18 @@ fun App() {
                 // An inbox row knows its project by id and name only, which is all the task screen
                 // and the drawer need — the full project row is never loaded just to navigate.
                 onOpenTask = { projectId, projectName, taskId ->
-                    go(Destination.Task(ProjectDto(id = projectId, name = projectName ?: "Проект"), taskId, from = where))
+                    go(
+                        Destination.Task(
+                            ProjectDto(id = projectId, name = projectName ?: strings.projectFallbackName),
+                            taskId,
+                            from = where,
+                        ),
+                    )
                 },
                 onOpenRun = { projectId, projectName, taskId, runId ->
                     go(
                         Destination.Run(
-                            project = ProjectDto(id = projectId, name = projectName ?: "Проект"),
+                            project = ProjectDto(id = projectId, name = projectName ?: strings.projectFallbackName),
                             taskId = taskId,
                             runId = runId,
                             runNumber = null,
@@ -532,7 +551,7 @@ fun App() {
                 onOpenRun = { projectId, projectName, taskId, runId ->
                     go(
                         Destination.Run(
-                            project = ProjectDto(id = projectId, name = projectName ?: "Проект"),
+                            project = ProjectDto(id = projectId, name = projectName ?: strings.projectFallbackName),
                             taskId = taskId,
                             runId = runId,
                             runNumber = null,
@@ -562,11 +581,20 @@ fun App() {
             // second copy of it — tapping "Настройки" from settings should do nothing, not deepen the
             // back stack by one indistinguishable screen.
             is Destination.Settings -> SettingsScreen(
+                session = current,
                 menu = menu,
                 onBack = { goBack(where.from) },
                 onOpenSettings = {},
                 onOpenProfile = { go(Destination.Profile(where.from)) },
                 onOpenNotifications = { go(Destination.Notifications(where)) },
+                // The stored session is what the next launch reads before `/auth/me` answers, so a
+                // language chosen here has to land in it too — otherwise the app opens in the old
+                // one and switches a moment later, every time.
+                onLocaleSaved = { locale ->
+                    val updated = current.copy(user = current.user.copy(locale = locale))
+                    saveSession(updated)
+                    session = updated
+                },
             )
 
             // Back returns to the settings hub it was opened from, while the footer's settings icon

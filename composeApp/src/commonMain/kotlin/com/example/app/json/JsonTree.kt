@@ -1,5 +1,6 @@
 package com.example.app.json
 
+import com.example.app.i18n.strings
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonArray
 import kotlinx.serialization.json.JsonElement
@@ -69,22 +70,11 @@ internal fun jsonRoot(element: JsonElement, label: String? = null): JsonNode =
  * has to answer "стоит ли открывать" on its own.
  */
 internal fun JsonElement.countLabel(): String? = when (this) {
-    is JsonObject -> plural(size, "поле", "поля", "полей")
-    is JsonArray -> plural(size, "элемент", "элемента", "элементов")
+    is JsonObject -> strings.jsonFields(size)
+    is JsonArray -> strings.jsonItems(size)
     else -> null
 }
 
-private fun plural(count: Int, one: String, few: String, many: String): String {
-    val mod100 = count % 100
-    val mod10 = count % 10
-    val word = when {
-        mod100 in 11..14 -> many
-        mod10 == 1 -> one
-        mod10 in 2..4 -> few
-        else -> many
-    }
-    return "$count $word"
-}
 
 /**
  * The one-line stand-in a collapsed row shows: enough of the value to recognise it, never enough to

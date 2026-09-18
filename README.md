@@ -193,13 +193,35 @@ origin (bearer tokens, no cookies), so this works out of the box against a stock
 
 ---
 
+## Languages
+
+The app is written in **Russian, English and Spanish**, and which one it speaks is the signed-in
+person's own setting — `UserAP.locale`, the profile column the admin panel reads too — not the
+device's language. The device is only a fallback, for the login screen and for an account whose
+profile says nothing.
+
+Strings live in `commonMain/.../i18n/` as a Kotlin interface (`Strings`) with one implementation per
+language, so a language missing an entry does not compile. Reading `strings.whatever` inside a
+composition subscribes it to the language, so switching repaints the whole app.
+
+Text the **server** writes — an inbox row's badge and facts, an event type's name, a run's summary —
+is untranslated and stays in the language the server speaks. That is deliberate: those words are one
+source of truth for the panel, the phone and the push notification at once.
+
+The full picture, including how to add a string and where to look when the language is wrong, is in
+[`docs/guides/mobile-i18n.md`](../docs/guides/mobile-i18n.md) of the server repository.
+
+---
+
 ## Tests
 
 ```bash
 ./gradlew :composeApp:desktopTest
 ```
 
-UI tests run on the desktop target via `compose.ui.test`.
+UI tests run on the desktop target via `compose.ui.test`. They pin the language (`RussianUiTest`) —
+without that the same assertion passes on a laptop and fails on a CI runner whose JVM reports
+`en_US`.
 
 ---
 
@@ -209,7 +231,8 @@ UI tests run on the desktop target via `compose.ui.test`.
 composeApp/src/
   commonMain/     the entire app — UI, navigation, API client, DTOs
     components/   AppButton, AppTextField
-    data/         AgentizApi, DTOs, Session, per-platform server default
+    data/         AgentizApi, DTOs, Session, preferences, per-platform server default
+    i18n/         Strings (one interface, three tables) and how the language is resolved
     push/         notification payload -> destination, token hand-off
     screens/      Login, Projects, Tasks, TaskDetail
     theme/        AppTheme design tokens

@@ -24,7 +24,21 @@ data class UserDto(
      * The app has no timezone database, so every timestamp it renders is UTC plus this number.
      */
     val utcOffsetMinutes: Int? = null,
+    /**
+     * The language of the admin profile (`UserAP.locale`), as a BCP-47 tag — the same field the
+     * panel reads, so saying "я по-русски" once says it on both surfaces.
+     *
+     * Null is "nobody has said", not a language: the column is empty on a fresh account and on a
+     * deployment whose panel never offered the field, and the app then falls back to the device.
+     * Absent from an older server's answer, which deserializes to the same null and behaves the
+     * way the app did before this field existed.
+     */
+    val locale: String? = null,
 )
+
+/** Body of PUT /auth/locale — the BCP-47 tag to store on the profile. */
+@Serializable
+data class SetLocaleRequest(val locale: String)
 
 /** Response of GET /auth/me. */
 @Serializable

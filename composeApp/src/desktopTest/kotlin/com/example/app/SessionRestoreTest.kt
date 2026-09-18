@@ -20,7 +20,7 @@ import kotlin.test.assertNull
  * The "keep me signed in" behaviour: a saved session is what the app starts from, and signing out
  * through the burger menu is what takes it away again.
  */
-class SessionRestoreTest {
+class SessionRestoreTest : RussianUiTest() {
 
     @BeforeTest
     fun isolateSessionStorage() = useInMemorySessionStorageForTesting()

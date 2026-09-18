@@ -20,7 +20,7 @@ import kotlin.test.Test
  * The «Изменения» section's contract: it appears exactly when the run carries a diff, wears the
  * same badges as the dashboard, and unfolds one file at a time so a many-file patch stays a list.
  */
-class DiffSectionTest {
+class DiffSectionTest : RussianUiTest() {
 
     // "Применено в" is a rendered timestamp, so this suite has a timezone whether it wants one or
     // not. Pinning both halves of ViewerTime keeps the expected digits off the build machine's zone.

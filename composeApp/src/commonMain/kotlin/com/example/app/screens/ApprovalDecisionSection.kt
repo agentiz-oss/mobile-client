@@ -25,6 +25,7 @@ import com.composeunstyled.Text
 import com.example.app.components.AppButton
 import com.example.app.components.AppTextField
 import com.example.app.data.ApprovalDto
+import com.example.app.i18n.strings
 import com.example.app.theme.AppTheme
 
 /**
@@ -60,10 +61,10 @@ fun ApprovalDecisionSection(
     if (approval.status != "pending") {
         Text(
             text = when (approval.status) {
-                "approved" -> "Уже принято."
-                "rejected" -> "Уже отклонено."
-                "cancelled" -> "Заявка снята: воркфлоу отменили."
-                else -> "Решение уже принято."
+                "approved" -> strings.approvalApproved
+                "rejected" -> strings.approvalRejected
+                "cancelled" -> strings.approvalCancelled
+                else -> strings.approvalDecided
             },
             style = AppTheme.Label,
             color = AppTheme.Muted,
@@ -83,12 +84,12 @@ fun ApprovalDecisionSection(
             .background(AppTheme.Surface, RoundedCornerShape(AppTheme.Radius))
             .padding(20.dp),
     ) {
-        SectionTitle(approval.title.ifBlank { "Примите работу" })
+        SectionTitle(approval.title.ifBlank { strings.approvalTitleFallback })
 
         val facts = listOfNotNull(
-            approval.runVerdict?.let { "вердикт агента: ${if (it == "pass") "ок" else "не ок"}" },
-            approval.runBranch?.takeIf { it.isNotBlank() }?.let { "ветка $it" },
-            approval.runCommitSha?.takeIf { it.isNotBlank() }?.let { "коммит ${it.take(12)}" },
+            approval.runVerdict?.let { strings.approvalVerdict(passed = it == "pass") },
+            approval.runBranch?.takeIf { it.isNotBlank() }?.let(strings::approvalBranch),
+            approval.runCommitSha?.takeIf { it.isNotBlank() }?.let { strings.approvalCommit(it.take(12)) },
         ).joinToString(" · ")
         if (facts.isNotBlank()) {
             Spacer(Modifier.height(8.dp))
@@ -128,14 +129,13 @@ fun ApprovalDecisionSection(
         when (mode) {
             "approve" -> {
                 Text(
-                    text = "Принять работу? Воркфлоу пойдёт дальше по ветке «принято». Комментарий"
-                        + " не обязателен — он останется в истории решения.",
+                    text = strings.approvalApproveExplain,
                     style = AppTheme.Body,
                     color = AppTheme.Foreground,
                 )
                 Spacer(Modifier.height(10.dp))
                 AppTextField(
-                    label = "Комментарий (не обязательно)",
+                    label = strings.approvalCommentLabel,
                     value = comment,
                     onValueChange = { comment = it },
                     minLines = 2,
@@ -144,46 +144,45 @@ fun ApprovalDecisionSection(
                 Spacer(Modifier.height(12.dp))
                 Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
                     AppButton(
-                        text = if (busy) "Отправляется…" else "Да, принять",
+                        text = if (busy) strings.sending else strings.approvalApproveSubmit,
                         onClick = { onApprove(comment.trim().takeIf { it.isNotBlank() }) },
                         enabled = !busy,
                     )
-                    AppButton(text = "Назад", onClick = { mode = null }, enabled = !busy)
+                    AppButton(text = strings.back, onClick = { mode = null }, enabled = !busy)
                 }
             }
 
             "reject" -> {
                 Text(
-                    text = "Что не так? Этот текст уедет разработчику как задание на доработку, и"
-                        + " по задаче начнётся новый круг.",
+                    text = strings.approvalRejectExplain,
                     style = AppTheme.Body,
                     color = AppTheme.Foreground,
                 )
                 Spacer(Modifier.height(10.dp))
                 AppTextField(
-                    label = "Замечания",
+                    label = strings.approvalRemarksLabel,
                     value = comment,
                     onValueChange = { comment = it },
-                    placeholder = "Подвал съезжает на узком экране",
+                    placeholder = strings.approvalRemarksPlaceholder,
                     minLines = 3,
                     enabled = !busy,
                 )
                 Spacer(Modifier.height(12.dp))
                 Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
                     AppButton(
-                        text = if (busy) "Отправляется…" else "Отклонить и вернуть",
+                        text = if (busy) strings.sending else strings.approvalRejectSubmit,
                         // The server refuses an empty reason; refusing it here means the person
                         // never meets that error.
                         onClick = { onReject(comment.trim()) },
                         enabled = !busy && comment.isNotBlank(),
                     )
-                    AppButton(text = "Назад", onClick = { mode = null }, enabled = !busy)
+                    AppButton(text = strings.back, onClick = { mode = null }, enabled = !busy)
                 }
             }
 
             else -> Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-                AppButton(text = "Принять…", onClick = { mode = "approve" }, enabled = !busy)
-                AppButton(text = "Отклонить…", onClick = { mode = "reject" }, enabled = !busy)
+                AppButton(text = strings.approvalApprove, onClick = { mode = "approve" }, enabled = !busy)
+                AppButton(text = strings.approvalReject, onClick = { mode = "reject" }, enabled = !busy)
             }
         }
     }

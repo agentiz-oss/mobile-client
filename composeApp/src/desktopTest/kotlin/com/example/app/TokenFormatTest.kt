@@ -16,7 +16,7 @@ import kotlin.test.assertNull
  * one number one way; plus the tolerance rules — an absent report is nothing (not zero), and a
  * stage-usage block with fields this build does not model still yields its badge.
  */
-class TokenFormatTest {
+class TokenFormatTest : RussianUiTest() {
 
     @Test
     fun formatsLikeTheDashboard() {

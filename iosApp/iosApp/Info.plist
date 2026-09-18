@@ -12,6 +12,20 @@
 	<string>$(PRODUCT_BUNDLE_IDENTIFIER)</string>
 	<key>CFBundleInfoDictionaryVersion</key>
 	<string>6.0</string>
+	<!--
+	  The languages the app is actually written in (composeApp/.../i18n). Declared here because iOS
+	  intersects this list with the user's own language order before answering
+	  `NSLocale.preferredLanguages` — which is what DeviceLanguage.ios.kt reads — and because it is
+	  what puts Agentiz into Settings → General → Language & Region as an app with a language of its
+	  own. Without it the app is a one-language bundle to the system whatever its screens say.
+	  A fallback only: the language in effect is `UserAP.locale`, which the app writes from Settings.
+	-->
+	<key>CFBundleLocalizations</key>
+	<array>
+		<string>en</string>
+		<string>ru</string>
+		<string>es</string>
+	</array>
 	<key>CFBundleName</key>
 	<string>$(PRODUCT_NAME)</string>
 	<key>CFBundlePackageType</key>

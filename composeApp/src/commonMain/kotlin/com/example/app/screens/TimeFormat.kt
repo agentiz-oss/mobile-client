@@ -1,5 +1,6 @@
 package com.example.app.screens
 
+import com.example.app.i18n.strings
 import com.example.app.platform.deviceUtcOffsetMinutes
 import kotlin.time.Clock
 import kotlin.time.ExperimentalTime
@@ -83,21 +84,6 @@ private fun two(value: Int): String = value.toString().padStart(2, '0')
  * answers null for a parseable input: a string carrying a date but no readable time falls through
  * to [fallbackTimestamp] and keeps its UTC digits, as it always did.
  */
-/**
- * Russian counting, three forms picked by the last digits: 1 (but not 11), 2–4 (but not 12–14),
- * everything else. Lives here with the other display helpers because «2 воркеров без входа» in a
- * line somebody reads before going to fix something reads as a machine talking.
- */
-internal fun plural(count: Int, one: String, few: String, many: String): String {
-    val mod100 = count % 100
-    if (mod100 in 11..14) return many
-    return when (mod100 % 10) {
-        1 -> one
-        2, 3, 4 -> few
-        else -> many
-    }
-}
-
 internal fun formatTimestamp(iso: String?): String? {
     if (iso.isNullOrBlank()) return null
     val minutes = epochMinutes(iso) ?: return fallbackTimestamp(iso)
@@ -105,7 +91,10 @@ internal fun formatTimestamp(iso: String?): String? {
     val days = shifted.floorDiv(1440)
     val ofDay = shifted.mod(1440L).toInt()
     val (year, month, day) = civilFromDays(days)
-    return "${two(day)}.${two(month)}.$year ${two(ofDay / 60)}:${two(ofDay % 60)}"
+    // The date is the language's (day-first, month-first, month name); the clock is 24-hour
+    // everywhere, because every other surface of this deployment — the panel, the run log, the
+    // server's own push text — prints it that way and a phone disagreeing is a phone lying.
+    return "${strings.date(year, month, day)} ${two(ofDay / 60)}:${two(ofDay % 60)}"
 }
 
 /**
@@ -139,12 +128,7 @@ internal fun formatDuration(startIso: String?, endIso: String?): String? {
     val end = epochMinutes(endIso) ?: return null
     val minutes = end - start
     if (minutes < 0) return null
-    val hours = minutes / 60
-    return when {
-        hours > 0 -> "$hours ч ${minutes % 60} мин"
-        minutes == 0L -> "<1 мин"
-        else -> "$minutes мин"
-    }
+    return strings.duration(hours = minutes / 60, minutes = minutes)
 }
 
 /** The pre-offset rendering, kept for inputs that carry a date but no parseable time. */
@@ -152,7 +136,10 @@ private fun fallbackTimestamp(iso: String): String? {
     val dateBits = iso.substringBefore('T', missingDelimiterValue = "").split('-')
     if (dateBits.size != 3) return null
     val (year, month, day) = dateBits
-    return "$day.$month.$year ${iso.substringAfter('T', missingDelimiterValue = "").take(5)}"
+    val date = year.toIntOrNull()?.let { y ->
+        month.toIntOrNull()?.let { m -> day.toIntOrNull()?.let { d -> strings.date(y, m, d) } }
+    } ?: "$day.$month.$year"
+    return "$date ${iso.substringAfter('T', missingDelimiterValue = "").take(5)}"
 }
 
 /** Whole minutes left until a UTC instant; null when it does not parse or has already passed. */
@@ -175,7 +162,7 @@ internal fun formatRemaining(
     val left = remainingMinutes(untilIso, nowEpochMillis) ?: return null
     val hours = left / 60
     val minutes = left % 60
-    return if (hours > 0) "$hours ч $minutes мин" else "$minutes мин"
+    return strings.remaining(hours, minutes)
 }
 
 /**
@@ -195,9 +182,11 @@ internal fun formatWaiting(
     val minutes = nowEpochMillis.floorDiv(60_000) - since
     return when {
         minutes < 1 -> null
-        minutes < 60 -> "$minutes мин"
-        minutes < 60 * 24 -> "${minutes / 60} ч"
-        else -> "${minutes / (60 * 24)} дн"
+        else -> strings.age(
+            minutes = minutes % 60,
+            hours = (minutes / 60) % 24,
+            days = minutes / (60 * 24),
+        )
     }
 }
 
@@ -228,20 +217,6 @@ internal fun formatFullSessionWindows(
     val left = remainingMinutes(untilIso, nowEpochMillis) ?: return null
     if (left <= windowMinutes) return null
     val windows = left / windowMinutes
-    return "$windows ${sessionWindowsNoun(windows, windowMinutes)}"
+    return strings.windowsLeft(windows, windowMinutes)
 }
 
-/**
- * Russian count agreement: 1 окно, 2–4 окна, 5+ окон — and 11–14 back to окон. The window's own
- * length is part of the phrase («5-часовых»), so a plan whose session is not five hours long reads
- * correctly without a second wording.
- */
-private fun sessionWindowsNoun(count: Long, windowMinutes: Long): String {
-    val unit = if (windowMinutes % 60L == 0L) "${windowMinutes / 60L}-часов" else "${windowMinutes}-минутн"
-    return when {
-        count % 100L in 11L..14L -> "полных ${unit}ых окон"
-        count % 10L == 1L -> "полное ${unit}ое окно"
-        count % 10L in 2L..4L -> "полных ${unit}ых окна"
-        else -> "полных ${unit}ых окон"
-    }
-}

@@ -22,7 +22,7 @@ import kotlin.test.Test
  * The drawer is opened and closed by dragging as well as by tapping, and it carries the build stamp
  * that a bug report gets quoted from.
  */
-class MenuDrawerTest {
+class MenuDrawerTest : RussianUiTest() {
 
     @BeforeTest
     fun isolateSessionStorage() = useInMemorySessionStorageForTesting()

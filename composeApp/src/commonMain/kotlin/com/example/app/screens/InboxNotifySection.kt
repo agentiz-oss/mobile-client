@@ -32,6 +32,7 @@ import com.example.app.data.InboxItemDto
 import com.example.app.data.NotificationPolicyDoc
 import com.example.app.data.NotificationPolicyDto
 import com.example.app.data.Session
+import com.example.app.i18n.strings
 import com.example.app.theme.AppTheme
 import kotlinx.coroutines.launch
 import kotlinx.serialization.json.JsonObject
@@ -77,7 +78,7 @@ fun InboxNotifySection(
         } catch (e: ApiException) {
             error = e.message
         } catch (e: Throwable) {
-            error = "Ошибка сети: ${e.message ?: "неизвестная ошибка"}"
+            error = strings.networkError(e.message)
         }
     }
 
@@ -97,7 +98,7 @@ fun InboxNotifySection(
             } catch (e: ApiException) {
                 error = e.message
             } catch (e: Throwable) {
-                error = "Ошибка сети: ${e.message ?: "неизвестная ошибка"}"
+                error = strings.networkError(e.message)
             } finally {
                 saving = false
             }
@@ -126,12 +127,11 @@ fun InboxNotifySection(
         }
         notify?.label?.takeIf { it.isNotBlank() }?.let { line ->
             Spacer(Modifier.height(4.dp))
-            Text(text = "Сейчас: $line", style = AppTheme.Label, color = AppTheme.Muted)
+            Text(text = strings.notificationsCurrent(line), style = AppTheme.Label, color = AppTheme.Muted)
         }
         Spacer(Modifier.height(2.dp))
         Text(
-            text = "Настройка выключает только доставку — пуш на телефон. Строка во входящих и запись"
-                + " в ленте появятся в любом случае.",
+            text = strings.notificationsDeliveryOnlyShort,
             style = AppTheme.Footnote,
             color = AppTheme.Muted,
         )
@@ -145,7 +145,11 @@ fun InboxNotifySection(
         Spacer(Modifier.height(12.dp))
         when {
             current == null && error != null -> Unit
-            current == null -> Text(text = "Загрузка настроек…", style = AppTheme.Label, color = AppTheme.Muted)
+            current == null -> Text(
+                text = strings.notificationsLoading,
+                style = AppTheme.Label,
+                color = AppTheme.Muted,
+            )
             else -> {
                 val projectScope = NotificationPolicyDoc.scopeOf(current.projects, item.projectId)
                 val projectMuted = NotificationPolicyDoc.isMuted(projectScope)
@@ -153,8 +157,8 @@ fun InboxNotifySection(
                 // The narrowest rule first: this kind of event, in this project. It is the one a
                 // reader actually means by "перестань про это писать".
                 NotifyRule(
-                    title = "Такие уведомления в проекте «${item.projectName ?: "без имени"}»",
-                    subtitle = "Только этот тип события. Остальное по проекту не меняется.",
+                    title = strings.notificationsRowThisType(item.projectName ?: strings.projectUnnamed),
+                    subtitle = strings.notificationsRowThisTypeHint,
                     value = NotificationPolicyDoc.channel(projectScope, item.activityType, "push"),
                     enabled = !saving,
                     onSelect = { value ->
@@ -172,8 +176,8 @@ fun InboxNotifySection(
                     val pipelineScope = NotificationPolicyDoc.scopeOf(current.pipelines, pipelineId)
                     Spacer(Modifier.height(12.dp))
                     NotifyRule(
-                        title = "Только для этого пайплайна",
-                        subtitle = "Перебивает правило проекта — например «проект молчит, а релиз пишет».",
+                        title = strings.notificationsRowPipeline,
+                        subtitle = strings.notificationsRowPipelineHint,
                         value = NotificationPolicyDoc.channel(pipelineScope, item.activityType, "push"),
                         enabled = !saving,
                         onSelect = { value ->
@@ -206,18 +210,18 @@ fun InboxNotifySection(
                 ) {
                     Column(modifier = Modifier.weight(1f).padding(end = 8.dp)) {
                         Text(
-                            text = "Ничего не присылать по этому проекту",
+                            text = strings.notificationsMuteProject,
                             style = AppTheme.Body,
                             color = AppTheme.Foreground,
                         )
                         Text(
-                            text = "Кроме типов, для которых выбрано своё значение",
+                            text = strings.notificationsMuteExcept,
                             style = AppTheme.Footnote,
                             color = AppTheme.Muted,
                         )
                     }
                     NotifyChip(
-                        label = if (projectMuted) "выключено" else "включено",
+                        label = if (projectMuted) strings.scopeOff else strings.scopeOn,
                         selected = projectMuted,
                         enabled = !saving,
                         onClick = {
@@ -235,8 +239,7 @@ fun InboxNotifySection(
                 if (current.shadowedByEnvironment) {
                     Spacer(Modifier.height(10.dp))
                     Text(
-                        text = "На сервере политика задана переменной окружения — правки сохранятся, но"
-                            + " не подействуют, пока её не уберут.",
+                        text = strings.notificationsEnvPinnedShort,
                         style = AppTheme.Footnote,
                         color = AppTheme.Danger,
                     )
@@ -245,7 +248,7 @@ fun InboxNotifySection(
                 onOpenAllSettings?.let { open ->
                     Spacer(Modifier.height(12.dp))
                     Text(
-                        text = "Все настройки уведомлений →",
+                        text = strings.notificationsAllSettings,
                         style = AppTheme.Label,
                         color = AppTheme.Accent,
                         modifier = Modifier.clickable(role = Role.Button, onClick = open),
@@ -276,10 +279,10 @@ private fun NotifyRule(
         ) {
             // Absence is a value here, and the first one: "своего правила нет" is where most rows
             // stand, and a person undoing a mute needs it to be as reachable as setting one.
-            NotifyChip("как в общих", value == null, enabled) { onSelect(null) }
-            NotifyChip("присылать", value == "on", enabled) { onSelect("on") }
-            NotifyChip("без звука", value == "silent", enabled) { onSelect("silent") }
-            NotifyChip("не присылать", value == "off", enabled) { onSelect("off") }
+            NotifyChip(strings.channelInherit, value == null, enabled) { onSelect(null) }
+            NotifyChip(strings.channelSend, value == "on", enabled) { onSelect("on") }
+            NotifyChip(strings.channelSendSilently, value == "silent", enabled) { onSelect("silent") }
+            NotifyChip(strings.channelDoNotSend, value == "off", enabled) { onSelect("off") }
         }
     }
 }

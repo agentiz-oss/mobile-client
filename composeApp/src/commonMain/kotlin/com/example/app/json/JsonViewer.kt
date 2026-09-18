@@ -32,6 +32,7 @@ import com.example.app.components.CopyIcon
 import com.example.app.components.DownIcon
 import com.example.app.components.ForwardIcon
 import com.example.app.components.rememberClipboardWriter
+import com.example.app.i18n.strings
 import com.example.app.platform.hapticActionComplete
 import com.example.app.theme.AppTheme
 import kotlinx.coroutines.delay
@@ -215,7 +216,7 @@ private fun JsonNodeRow(
 @Composable
 private fun MoreRow(row: JsonRow.More, onShowAll: () -> Unit) {
     Text(
-        text = "…показать ещё ${row.hidden}",
+        text = strings.jsonShowMore(row.hidden),
         style = AppTheme.Label,
         color = AppTheme.Muted,
         modifier = Modifier

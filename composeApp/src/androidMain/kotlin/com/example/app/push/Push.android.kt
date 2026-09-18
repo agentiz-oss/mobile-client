@@ -9,6 +9,8 @@ import android.content.pm.PackageManager
 import android.os.Build
 import androidx.activity.ComponentActivity
 import androidx.activity.result.contract.ActivityResultContracts
+import com.example.app.i18n.AppLocale
+import com.example.app.i18n.strings
 import com.google.firebase.messaging.FirebaseMessaging
 
 /**
@@ -64,43 +66,48 @@ fun attachPushHost(activity: ComponentActivity) {
  */
 fun createNotificationChannels(context: Context) {
     if (Build.VERSION.SDK_INT < Build.VERSION_CODES.O) return
+    // A channel's name and description are written into the OS and outlive this process, so they
+    // have to be in the reader's language even when nothing of the app is on screen — this runs
+    // from a background push as well as from the activity. Idempotent, and re-creating a channel
+    // with the same id is how a name is corrected once the language is known.
+    AppLocale.start()
     val manager = context.getSystemService(NotificationManager::class.java) ?: return
     manager.createNotificationChannel(
         NotificationChannel(
             INTERACTIONS_CHANNEL_ID,
-            "Вопросы агентов",
+            strings.pushChannelQuestions,
             // High: a question holds its whole pipeline run until someone answers it.
             NotificationManager.IMPORTANCE_HIGH,
         ).apply {
-            description = "Агент остановился и ждёт ответа"
+            description = strings.pushChannelQuestionsHint
         },
     )
     manager.createNotificationChannel(
         NotificationChannel(
             ACTIONS_CHANNEL_ID,
-            "Требуют действия",
+            strings.pushChannelActionable,
             NotificationManager.IMPORTANCE_HIGH,
         ).apply {
-            description = "Ревью изменений, удержанные диффы, сбои push"
+            description = strings.pushChannelActionableHint
         },
     )
     manager.createNotificationChannel(
         NotificationChannel(
             FAILURES_CHANNEL_ID,
-            "Ошибки запусков",
+            strings.pushChannelFailures,
             NotificationManager.IMPORTANCE_DEFAULT,
         ).apply {
-            description = "Запуск завершился с ошибкой"
+            description = strings.pushChannelFailuresHint
         },
     )
     manager.createNotificationChannel(
         NotificationChannel(
             RESULTS_CHANNEL_ID,
-            "Результаты",
+            strings.pushChannelResults,
             // Low: the server sends successes silent on purpose; the channel matches.
             NotificationManager.IMPORTANCE_LOW,
         ).apply {
-            description = "Успешные запуски и прочие тихие события"
+            description = strings.pushChannelResultsHint
         },
     )
 }
