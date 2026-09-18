@@ -46,6 +46,10 @@ provisioning profile or Xcode, so Gradle plus one upload action is the whole con
   A local build with the variable unset keeps `1`.
 * **versionName** — `appVersionName` in `composeApp/build.gradle.kts` (`1.0`). Play shows it to
   testers and does not care whether it repeats.
+* **release name** — the bare `github.run_number`, which is what Play Console lists the release
+  under. Only ever read by a person, so it is the one number that opens the run that built it;
+  the run knows its own commit, which is why the SHA it used to carry is gone. It tracks the
+  versionCode by construction — release `4` is versionCode `1004`.
 
 ## The upload key
 

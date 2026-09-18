@@ -169,6 +169,12 @@ jobs:
           if-no-files-found: error
           retention-days: 30
 
+      # `releaseName` is the label Play Console lists the release under, and it is read by people
+      # rather than by anything — so it is the CI run number and nothing else. It used to carry the
+      # full commit SHA too, which made every row in the console forty characters of hex wide while
+      # answering a question nobody had: the run number opens the Actions run, and the run knows its
+      # own commit. Unique across re-runs of an older commit for the same reason the versionCode is
+      # (`1000 + run_number`), so the two always agree — release `4` is versionCode `1004`.
       - name: Publish to Google Play
         if: github.event_name == 'push' || inputs.upload
         uses: r0adkll/upload-google-play@v1
@@ -178,4 +184,4 @@ jobs:
           releaseFiles: composeApp/build/outputs/bundle/release/*.aab
           track: ${{ inputs.track || 'internal' }}
           status: completed
-          releaseName: ${{ github.run_number }} (${{ github.sha }})
+          releaseName: ${{ github.run_number }}
